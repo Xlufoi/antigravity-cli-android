@@ -74,6 +74,26 @@ fun MessageBubble(
                 .padding(12.dp)
         ) {
             Column {
+                // Console sender header
+                val senderTag = when {
+                    isUser -> "user ›"
+                    isSystem -> "sys ›"
+                    else -> "agy ›"
+                }
+                val senderColor = when {
+                    isUser -> AgTerminalGreen
+                    isSystem -> AgTerminalAmber
+                    else -> AgTerminalPrompt
+                }
+                Text(
+                    text = senderTag,
+                    color = senderColor,
+                    fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
+                    fontWeight = androidx.compose.ui.text.font.FontWeight.Bold,
+                    fontSize = 11.sp,
+                    modifier = Modifier.padding(bottom = 4.dp)
+                )
+
                 if (message.text.isNotBlank()) {
                     val displayText = if (message.isStreaming && !isUser) {
                         if (cursorAlpha > 0.5f) "${message.text} ▌" else "${message.text}   "

@@ -7,10 +7,10 @@ import android.os.Build
 import android.os.Environment
 import android.provider.Settings
 import com.google.antigravity.data.model.AgpStreamMessage
+import com.google.antigravity.domain.model.ModelInfo
+import com.google.antigravity.domain.model.UsageStats
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.channelFlow
-import kotlinx.coroutines.flow.flowOn
+import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.jsonObject
@@ -22,12 +22,15 @@ import java.util.UUID
 
 class NativeProcessManager(
     private val context: Context,
-    private val workspacePath: String = context.filesDir.absolutePath + "/workspace",
-    private val model: String = "gemini-3.8-flash-low",
-    private val oauthToken: String? = null
+    var workspacePath: String = context.filesDir.absolutePath + "/workspace",
+    var model: String = "gemini-3.8-flash-low",
+    private val oauthToken: String? = null,
+    var autoApprovePermissions: Boolean = true
 ) {
     private var currentProcess: Process? = null
     private val json = Json { ignoreUnknownKeys = true }
+    private val _usageStats = MutableStateFlow(UsageStats())
+    val usageStats: StateFlow<UsageStats> = _usageStats.asStateFlow()
 
     companion object {
         private const val TAG = "NativeProcessManager"
@@ -265,7 +268,7 @@ class NativeProcessManager(
             else -> "low"
         }
 
-        val command = listOf(
+        val command = mutableListOf(
             nativeLd.absolutePath,
             "--library-path", libraryPaths,
             agyBinary.absolutePath,
@@ -274,9 +277,11 @@ class NativeProcessManager(
             "--output-format", "stream-json",
             "--model", model,
             "--effort", effortValue,
-            "--dangerously-skip-permissions",
             "--add-dir", workspaceDir.absolutePath
         )
+        if (autoApprovePermissions) {
+            command.add("--dangerously-skip-permissions")
+        }
 
         AppLogger.log(TAG, "Executing: ${command.joinToString(" ")}")
 
@@ -344,6 +349,23 @@ class NativeProcessManager(
                             val stepType = stepUpdate?.get("step_type")?.jsonPrimitive?.content
                             val state = stepUpdate?.get("state")?.jsonPrimitive?.content
 
+                            val usageObj = stepUpdate?.get("usage")?.jsonObject
+                            if (usageObj != null) {
+                                val inTok = usageObj["input_tokens"]?.jsonPrimitive?.content?.toLongOrNull() ?: 0L
+                                val outTok = usageObj["output_tokens"]?.jsonPrimitive?.content?.toLongOrNull() ?: 0L
+                                val thinkTok = usageObj["thinking_tokens"]?.jsonPrimitive?.content?.toLongOrNull() ?: 0L
+                                val totTok = usageObj["total_tokens"]?.jsonPrimitive?.content?.toLongOrNull() ?: 0L
+                                _usageStats.update { prev ->
+                                    prev.copy(
+                                        lastInputTokens = inTok,
+                                        lastOutputTokens = outTok,
+                                        lastThinkingTokens = thinkTok,
+                                        lastTotalTokens = totTok,
+                                        sessionTotalTokens = prev.sessionTotalTokens + totTok
+                                    )
+                                }
+                            }
+
                             if (textDelta != null) {
                                 send(AgpStreamMessage(type = "chunk", text = textDelta))
                             } else if (stepType == "tool") {
@@ -356,6 +378,25 @@ class NativeProcessManager(
                         "result" -> {
                             val resultObj = rootObj["result"]?.jsonObject
                             val resText = resultObj?.get("response")?.jsonPrimitive?.content
+
+                            val usageObj = resultObj?.get("usage")?.jsonObject
+                            if (usageObj != null) {
+                                val inTok = usageObj["input_tokens"]?.jsonPrimitive?.content?.toLongOrNull() ?: 0L
+                                val outTok = usageObj["output_tokens"]?.jsonPrimitive?.content?.toLongOrNull() ?: 0L
+                                val thinkTok = usageObj["thinking_tokens"]?.jsonPrimitive?.content?.toLongOrNull() ?: 0L
+                                val totTok = usageObj["total_tokens"]?.jsonPrimitive?.content?.toLongOrNull() ?: 0L
+                                _usageStats.update { prev ->
+                                    prev.copy(
+                                        lastInputTokens = inTok,
+                                        lastOutputTokens = outTok,
+                                        lastThinkingTokens = thinkTok,
+                                        lastTotalTokens = totTok,
+                                        sessionTotalTokens = prev.sessionTotalTokens + totTok,
+                                        turnsCount = prev.turnsCount + 1
+                                    )
+                                }
+                            }
+
                             if (!resText.isNullOrBlank()) {
                                 send(AgpStreamMessage(type = "final", text = resText))
                             }
@@ -400,4 +441,144 @@ class NativeProcessManager(
             AppLogger.log(TAG, "Error stopping execution: ${e.message}")
         }
     }
+
+    suspend fun fetchAvailableModels(): List<ModelInfo> = withContext(Dispatchers.IO) {
+        val engineDir = File(context.filesDir, "engine")
+        val agyBinary = File(engineDir, "agy.va39")
+        val nativeLibDir = File(context.applicationInfo.nativeLibraryDir)
+        val nativeLd = File(nativeLibDir, "libld.so")
+        val libDir = File(engineDir, "lib")
+        val geminiDir = File(context.filesDir, ".gemini/antigravity-cli")
+        val caCertFile = File(context.filesDir, "cacert.pem")
+
+        val fallback = listOf(
+            ModelInfo(id = "gemini-3.8-flash-low", displayName = "Gemini 3.8 Flash (Low ⚡ Instant)", isRecommended = true, effort = "low"),
+            ModelInfo(id = "gemini-3.8-flash-medium", displayName = "Gemini 3.8 Flash (Medium ⚖️ Balance)", effort = "medium"),
+            ModelInfo(id = "gemini-3.8-flash-high", displayName = "Gemini 3.8 Flash (High 🧠 Thinking)", effort = "high"),
+            ModelInfo(id = "gemini-3.7-flash-low", displayName = "Gemini 3.7 Flash (Low)", effort = "low"),
+            ModelInfo(id = "gemini-3.6-flash-low", displayName = "Gemini 3.6 Flash (Low)", effort = "low"),
+            ModelInfo(id = "claude-sonnet-4-6", displayName = "Claude Sonnet 4.6 (Claude 🎭)", effort = "low"),
+            ModelInfo(id = "gpt-oss-120b-medium", displayName = "GPT-OSS 120B (Medium)", effort = "medium")
+        )
+
+        if (!agyBinary.exists() || !nativeLd.exists()) {
+            return@withContext fallback
+        }
+
+        val libraryPaths = listOf(nativeLibDir.absolutePath, libDir.absolutePath).joinToString(":")
+        val command = listOf(
+            nativeLd.absolutePath,
+            "--library-path", libraryPaths,
+            agyBinary.absolutePath,
+            "models"
+        )
+
+        try {
+            AppLogger.log(TAG, "Fetching dynamic models via: ${command.joinToString(" ")}")
+            val pb = ProcessBuilder(command)
+            val env = pb.environment()
+            env["HOME"] = context.filesDir.absolutePath
+            env["ANTIGRAVITY_APP_DATA_DIR"] = geminiDir.absolutePath
+            env["SSL_CERT_FILE"] = caCertFile.absolutePath
+            env["TERM"] = "xterm-256color"
+            env["GODEBUG"] = "netdns=cgo"
+            env["RES_OPTIONS"] = "timeout:2 attempts:3"
+
+            val proc = pb.start()
+            val reader = BufferedReader(InputStreamReader(proc.inputStream))
+            val models = mutableListOf<ModelInfo>()
+
+            reader.forEachLine { line ->
+                val l = line.trim()
+                if (l.isNotEmpty() && !l.contains("Fetching available models") && !l.startsWith("[") && !l.startsWith("⠋")) {
+                    val parts = l.split(Regex("\\s{2,}"), limit = 2)
+                    if (parts.isNotEmpty()) {
+                        val id = parts[0].trim()
+                        val displayName = if (parts.size > 1) parts[1].trim() else id
+                        val effort = when {
+                            id.contains("high") -> "high"
+                            id.contains("medium") -> "medium"
+                            else -> "low"
+                        }
+                        val isRec = id == "gemini-3.8-flash-low"
+                        models.add(ModelInfo(id = id, displayName = displayName, isRecommended = isRec, effort = effort))
+                    }
+                }
+            }
+            proc.waitFor()
+            if (models.isNotEmpty()) {
+                AppLogger.log(TAG, "Fetched ${models.size} models from server")
+                models
+            } else {
+                fallback
+            }
+        } catch (e: Exception) {
+            AppLogger.log(TAG, "Failed fetching models from server: ${e.message}")
+            fallback
+        }
+    }
+
+    fun generateAuthUrl(): Flow<String> = channelFlow {
+        val engineDir = File(context.filesDir, "engine")
+        val agyBinary = File(engineDir, "agy.va39")
+        val nativeLibDir = File(context.applicationInfo.nativeLibraryDir)
+        val nativeLd = File(nativeLibDir, "libld.so")
+        val libDir = File(engineDir, "lib")
+        val caCertFile = File(context.filesDir, "cacert.pem")
+        val tempGeminiDir = File(context.cacheDir, "temp_auth_${UUID.randomUUID()}").apply { mkdirs() }
+
+        val libraryPaths = listOf(nativeLibDir.absolutePath, libDir.absolutePath).joinToString(":")
+        val command = listOf(
+            nativeLd.absolutePath,
+            "--library-path", libraryPaths,
+            agyBinary.absolutePath,
+            "-p", "login_trigger"
+        )
+
+        AppLogger.log(TAG, "Triggering login URL generation...")
+        val pb = ProcessBuilder(command)
+        val env = pb.environment()
+        env["HOME"] = context.filesDir.absolutePath
+        env["ANTIGRAVITY_APP_DATA_DIR"] = tempGeminiDir.absolutePath
+        env["SSL_CERT_FILE"] = caCertFile.absolutePath
+        env["TERM"] = "xterm-256color"
+        env["GODEBUG"] = "netdns=cgo"
+        env["RES_OPTIONS"] = "timeout:2 attempts:3"
+
+        try {
+            val proc = pb.start()
+            val errReader = BufferedReader(InputStreamReader(proc.errorStream))
+            val outReader = BufferedReader(InputStreamReader(proc.inputStream))
+
+            val thread = Thread {
+                try {
+                    errReader.forEachLine { line ->
+                        AppLogger.log(TAG, "AUTH STDERR: $line")
+                        if (line.contains("https://accounts.google.com/o/oauth2/auth") || (line.contains("https://") && line.contains("oauth"))) {
+                            val start = line.indexOf("https://")
+                            val url = line.substring(start).trim()
+                            trySend(url)
+                        }
+                    }
+                } catch (_: Exception) {}
+            }
+            thread.start()
+
+            outReader.forEachLine { line ->
+                AppLogger.log(TAG, "AUTH STDOUT: $line")
+                if (line.contains("https://accounts.google.com/o/oauth2/auth") || (line.contains("https://") && line.contains("oauth"))) {
+                    val start = line.indexOf("https://")
+                    val url = line.substring(start).trim()
+                    trySend(url)
+                }
+            }
+
+            thread.join(8000)
+            proc.destroy()
+        } catch (e: Exception) {
+            AppLogger.log(TAG, "Auth generation error: ${e.message}")
+        } finally {
+            tempGeminiDir.deleteRecursively()
+        }
+    }.flowOn(Dispatchers.IO)
 }

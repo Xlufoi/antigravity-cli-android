@@ -1,15 +1,16 @@
 package com.google.antigravity.data.repository
 
 import android.content.Context
+import com.google.antigravity.data.ipc.AccountManager
 import com.google.antigravity.data.ipc.NativeProcessManager
 import com.google.antigravity.domain.model.ChatMessage
 import com.google.antigravity.domain.model.MessageSender
+import com.google.antigravity.domain.model.ModelInfo
+import com.google.antigravity.domain.model.UsageStats
 import com.google.antigravity.domain.repository.AgentRepository
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.MutableSharedFlow
-import kotlinx.coroutines.flow.asSharedFlow
+import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 import java.util.UUID
 
@@ -18,15 +19,27 @@ class AgentRepositoryImpl(private val context: Context) : AgentRepository {
     private var processManager: NativeProcessManager? = null
     private val _messagesFlow = MutableSharedFlow<ChatMessage>(replay = 50)
     private val scope = CoroutineScope(Dispatchers.IO)
+    override val accountManager = AccountManager(context)
+    private var currentWorkspace: String = context.filesDir.absolutePath + "/workspace"
+    private var currentAutoApprove: Boolean = true
 
     override suspend fun startSession(
         model: String,
-        oauthToken: String?
+        oauthToken: String?,
+        workspacePath: String?,
+        autoApprove: Boolean
     ): Boolean {
+        if (!workspacePath.isNullOrBlank()) {
+            currentWorkspace = workspacePath
+        }
+        currentAutoApprove = autoApprove
+
         val manager = NativeProcessManager(
             context = context,
+            workspacePath = currentWorkspace,
             model = model,
-            oauthToken = oauthToken
+            oauthToken = oauthToken,
+            autoApprovePermissions = autoApprove
         )
         val started = manager.startEngine()
         if (started) {
@@ -155,5 +168,33 @@ class AgentRepositoryImpl(private val context: Context) : AgentRepository {
 
     override fun stopSession() {
         processManager?.stopEngine()
+    }
+
+    override suspend fun fetchAvailableModels(): List<ModelInfo> {
+        val manager = processManager ?: NativeProcessManager(context = context)
+        return manager.fetchAvailableModels()
+    }
+
+    override fun generateAuthUrl(): Flow<String> {
+        val manager = processManager ?: NativeProcessManager(context = context)
+        return manager.generateAuthUrl()
+    }
+
+    override fun setWorkspacePath(path: String) {
+        currentWorkspace = path
+        processManager?.workspacePath = path
+    }
+
+    override fun getWorkspacePath(): String = currentWorkspace
+
+    override fun setAutoApprove(autoApprove: Boolean) {
+        currentAutoApprove = autoApprove
+        processManager?.autoApprovePermissions = autoApprove
+    }
+
+    override fun isAutoApprove(): Boolean = currentAutoApprove
+
+    override fun getUsageStats(): StateFlow<UsageStats> {
+        return processManager?.usageStats ?: MutableStateFlow(UsageStats()).asStateFlow()
     }
 }
