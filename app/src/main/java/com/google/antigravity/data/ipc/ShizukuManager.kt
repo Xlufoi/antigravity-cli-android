@@ -42,11 +42,16 @@ object ShizukuManager {
             if (!isPermissionGranted()) {
                 return "Ошибка: Доступ Shizuku не предоставлен."
             }
-            val proc = Shizuku.newProcess(arrayOf("sh", "-c", command), null, null)
-            val inputStream: InputStream = proc.inputStream
-            val errorStream: InputStream = proc.errorStream
-            val output = inputStream.bufferedReader().use { it.readText() }
-            val error = errorStream.bufferedReader().use { it.readText() }
+            val newProcessMethod = Shizuku::class.java.getDeclaredMethod(
+                "newProcess",
+                Array<String>::class.java,
+                Array<String>::class.java,
+                String::class.java
+            )
+            newProcessMethod.isAccessible = true
+            val proc = newProcessMethod.invoke(null, arrayOf("sh", "-c", command), null, null) as java.lang.Process
+            val output = proc.inputStream.bufferedReader().use { it.readText() }
+            val error = proc.errorStream.bufferedReader().use { it.readText() }
             proc.waitFor()
             if (output.isNotBlank()) output.trim() else error.trim()
         } catch (e: Throwable) {
