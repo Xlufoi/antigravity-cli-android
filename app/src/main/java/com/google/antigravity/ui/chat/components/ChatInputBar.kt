@@ -23,6 +23,7 @@ import com.google.antigravity.ui.theme.*
 fun ChatInputBar(
     isStreaming: Boolean,
     activeModel: String,
+    activeAccountEmail: String,
     workspacePath: String,
     autoApprove: Boolean,
     isShizukuActive: Boolean,
@@ -30,10 +31,12 @@ fun ChatInputBar(
     onSendMessage: (String) -> Unit,
     onStopSession: () -> Unit,
     onModelClick: () -> Unit,
+    onAccountClick: () -> Unit,
     onWorkspaceClick: () -> Unit,
     onToggleAutoApprove: () -> Unit,
     onAdbClick: () -> Unit,
     onRootClick: () -> Unit,
+    onRetryLastMessage: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     var textInput by remember { mutableStateOf("") }
@@ -126,7 +129,7 @@ fun ChatInputBar(
         // Horizontal line separator (matching Screenshot 1)
         HorizontalDivider(color = AgSeparator, thickness = 1.dp)
 
-        // Status Line: "? for shortcuts" on left, model name on right (EXACT Screenshot 1)
+        // Status Line: "? for shortcuts" on left, account email and model name on right
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -140,13 +143,31 @@ fun ChatInputBar(
                 fontFamily = FontFamily.Monospace,
                 fontSize = 12.sp
             )
-            Text(
-                text = activeModel,
-                color = AgTerminalPrompt,
-                fontFamily = FontFamily.Monospace,
-                fontSize = 12.sp,
-                modifier = Modifier.clickable { onModelClick() }
-            )
+
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                val emailDisplay = if (activeAccountEmail.isNotBlank()) {
+                    if (activeAccountEmail.length > 22) "${activeAccountEmail.take(19)}..." else activeAccountEmail
+                } else "[NO ACCOUNT]"
+
+                Text(
+                    text = "[$emailDisplay]",
+                    color = if (activeAccountEmail.isNotBlank()) AgTerminalGreen else AgTextSecondary,
+                    fontFamily = FontFamily.Monospace,
+                    fontSize = 11.sp,
+                    modifier = Modifier.clickable { onAccountClick() }
+                )
+
+                Text(
+                    text = activeModel,
+                    color = AgTerminalPrompt,
+                    fontFamily = FontFamily.Monospace,
+                    fontSize = 12.sp,
+                    modifier = Modifier.clickable { onModelClick() }
+                )
+            }
         }
 
         // Quick Console Chips directly below
@@ -158,6 +179,12 @@ fun ChatInputBar(
             horizontalArrangement = Arrangement.spacedBy(6.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
+            TerminalChip(
+                text = "[RETRY]",
+                color = AgTerminalAmber,
+                onClick = onRetryLastMessage
+            )
+
             TerminalChip(
                 text = if (isRootActive) "[root: ON]" else "[root: OFF]",
                 color = if (isRootActive) AgTerminalGreen else AgTextSecondary,

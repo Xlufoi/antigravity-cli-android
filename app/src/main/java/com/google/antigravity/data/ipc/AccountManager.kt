@@ -13,6 +13,7 @@ data class AccountProfile(
     val name: String,
     val token: String,
     val isCurrent: Boolean = false,
+    val email: String = "",
     val createdAt: Long = System.currentTimeMillis()
 )
 
@@ -32,13 +33,58 @@ class AccountManager(private val context: Context) {
         geminiDir.mkdirs()
     }
 
+    fun extractEmail(rawJson: String): String {
+        return try {
+            val obj = org.json.JSONObject(rawJson)
+            val idToken = obj.optString("id_token")
+            if (idToken.isNotBlank()) {
+                val parts = idToken.split(".")
+                if (parts.size >= 2) {
+                    val payload = String(android.util.Base64.decode(parts[1], android.util.Base64.URL_SAFE or android.util.Base64.NO_PADDING or android.util.Base64.NO_WRAP))
+                    val pObj = org.json.JSONObject(payload)
+                    val email = pObj.optString("email")
+                    if (email.isNotBlank()) return email
+                }
+            }
+            obj.optString("email")
+        } catch (_: Exception) {
+            ""
+        }
+    }
+
     fun getAccounts(): List<AccountProfile> {
         return try {
-            if (!accountsFile.exists()) emptyList()
-            else json.decodeFromString<List<AccountProfile>>(accountsFile.readText())
+            if (!accountsFile.exists()) {
+                if (tokenFile.exists() && tokenFile.length() > 0L) {
+                    val content = tokenFile.readText()
+                    val email = extractEmail(content)
+                    val autoProfile = AccountProfile(
+                        name = if (email.isNotBlank()) email else "Default Account",
+                        token = content,
+                        isCurrent = true,
+                        email = email
+                    )
+                    listOf(autoProfile)
+                } else {
+                    emptyList()
+                }
+            } else {
+                json.decodeFromString<List<AccountProfile>>(accountsFile.readText())
+            }
         } catch (e: Exception) {
             AppLogger.log(TAG, "Failed to read accounts: ${e.message}")
             emptyList()
+        }
+    }
+
+    fun getActiveAccountEmail(): String {
+        val active = getAccounts().find { it.isCurrent } ?: getAccounts().firstOrNull()
+        if (active != null && active.email.isNotBlank()) return active.email
+        if (active != null && active.name.contains("@")) return active.name
+        return try {
+            if (tokenFile.exists()) extractEmail(tokenFile.readText()) else ""
+        } catch (_: Exception) {
+            ""
         }
     }
 
@@ -70,12 +116,18 @@ class AccountManager(private val context: Context) {
 }"""
         }
 
-        val existingIndex = current.indexOfFirst { it.name.equals(name, ignoreCase = true) }
+        val email = extractEmail(formattedToken)
+        val finalName = if (name.isBlank() || name == "Default") {
+            if (email.isNotBlank()) email else "Account"
+        } else name
+
+        val existingIndex = current.indexOfFirst { it.name.equals(finalName, ignoreCase = true) }
         val id = if (existingIndex != -1) current[existingIndex].id else UUID.randomUUID().toString()
         val newProfile = AccountProfile(
             id = id,
-            name = name,
+            name = finalName,
             token = formattedToken,
+            email = email,
             isCurrent = makeActive
         )
 

@@ -49,6 +49,7 @@ data class ChatUiState(
     // Accounts
     val accounts: List<AccountProfile> = emptyList(),
     val currentTokenSnippet: String = "",
+    val activeAccountEmail: String = "",
     // Auth URL generator & In-app OAuth WebView
     val generatedAuthUrl: String? = null,
     val isGeneratingAuthUrl: Boolean = false,
@@ -367,10 +368,12 @@ class ChatViewModel(
     fun loadAccounts() {
         val list = repository.accountManager.getAccounts()
         val snippet = repository.accountManager.getCurrentTokenSnippet()
+        val email = repository.accountManager.getActiveAccountEmail()
         _uiState.update {
             it.copy(
                 accounts = list,
-                currentTokenSnippet = snippet
+                currentTokenSnippet = snippet,
+                activeAccountEmail = email
             )
         }
     }
@@ -510,5 +513,23 @@ class ChatViewModel(
     fun stopSession() {
         repository.stopSession()
         _uiState.update { it.copy(isStreaming = false) }
+    }
+
+    fun retryLastMessage() {
+        val msgs = _uiState.value.messages
+        if (msgs.isEmpty()) return
+
+        val lastUserIndex = msgs.indexOfLast { it.sender == MessageSender.USER }
+        if (lastUserIndex == -1) return
+
+        val userPrompt = msgs[lastUserIndex].text
+        // Keep messages up to and including the last user prompt
+        val trimmed = msgs.take(lastUserIndex + 1)
+        _uiState.update { it.copy(messages = trimmed, isStreaming = true) }
+        persistCurrentMessages(trimmed)
+
+        viewModelScope.launch {
+            repository.sendMessage(userPrompt)
+        }
     }
 }

@@ -19,6 +19,7 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.google.antigravity.ui.chat.components.AccountSelectorDialog
 import com.google.antigravity.ui.chat.components.ChatInputBar
 import com.google.antigravity.ui.chat.components.MessageBubble
 import com.google.antigravity.ui.chat.components.ModelSelectorDialog
@@ -38,8 +39,9 @@ fun ChatScreen(
     val listState = rememberLazyListState()
 
     var showSettings by remember { mutableStateOf(false) }
-    var initialSettingsTab by remember { mutableStateOf(SettingsSubTab.ACCOUNTS) }
+    var initialSettingsTab by remember { mutableStateOf(SettingsSubTab.MENU) }
     var showModelDialog by remember { mutableStateOf(false) }
+    var showAccountDialog by remember { mutableStateOf(false) }
     var showWorkspaceDialog by remember { mutableStateOf(false) }
 
     // Auto-scroll when messages change or streaming updates arrive
@@ -82,7 +84,7 @@ fun ChatScreen(
                         fontSize = 12.sp,
                         modifier = Modifier
                             .clickable {
-                                initialSettingsTab = SettingsSubTab.ACCOUNTS
+                                initialSettingsTab = SettingsSubTab.MENU
                                 showSettings = !showSettings
                             }
                             .padding(vertical = 4.dp, horizontal = 2.dp)
@@ -126,6 +128,7 @@ fun ChatScreen(
                 ChatInputBar(
                     isStreaming = uiState.isStreaming,
                     activeModel = uiState.activeModel,
+                    activeAccountEmail = uiState.activeAccountEmail,
                     workspacePath = uiState.workspacePath,
                     autoApprove = uiState.autoApprove,
                     isShizukuActive = uiState.isShizukuGranted,
@@ -133,6 +136,7 @@ fun ChatScreen(
                     onSendMessage = { viewModel.sendMessage(it) },
                     onStopSession = { viewModel.stopSession() },
                     onModelClick = { showModelDialog = true },
+                    onAccountClick = { showAccountDialog = true },
                     onWorkspaceClick = { showWorkspaceDialog = true },
                     onToggleAutoApprove = { viewModel.toggleAutoApprove() },
                     onAdbClick = {
@@ -142,7 +146,8 @@ fun ChatScreen(
                     onRootClick = {
                         initialSettingsTab = SettingsSubTab.ADVANCED
                         showSettings = true
-                    }
+                    },
+                    onRetryLastMessage = { viewModel.retryLastMessage() }
                 )
             }
         },
@@ -229,6 +234,23 @@ fun ChatScreen(
             onSelectModel = { viewModel.selectModel(it) },
             onRefresh = { viewModel.loadModels(forceRefresh = true) },
             onDismiss = { showModelDialog = false }
+        )
+    }
+
+    if (showAccountDialog) {
+        AccountSelectorDialog(
+            activeEmail = uiState.activeAccountEmail,
+            accounts = uiState.accountProfiles,
+            onSelectAccount = { accountId ->
+                viewModel.switchAccount(accountId)
+                showAccountDialog = false
+            },
+            onOpenAccountsSettings = {
+                showAccountDialog = false
+                initialSettingsTab = SettingsSubTab.ACCOUNTS
+                showSettings = true
+            },
+            onDismiss = { showAccountDialog = false }
         )
     }
 
