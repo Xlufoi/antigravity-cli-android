@@ -42,6 +42,16 @@ class AgentRepositoryImpl(private val context: Context) : AgentRepository {
             var currentAgentMessage = ""
             manager.observeEvents().collect { event ->
                 when (event.type) {
+                    "auth_url" -> {
+                        event.text?.let { urlText ->
+                            _messagesFlow.emit(
+                                ChatMessage(
+                                    sender = MessageSender.SYSTEM,
+                                    text = "🔗 Для входа перейдите по ссылке авторизации:\n\n$urlText"
+                                )
+                            )
+                        }
+                    }
                     "text", "chunk" -> {
                         event.text?.let { chunk ->
                             currentAgentMessage += chunk

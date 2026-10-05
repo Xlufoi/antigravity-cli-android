@@ -6,6 +6,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
 import java.io.FileOutputStream
+import java.io.InputStream
 import java.util.zip.GZIPInputStream
 
 object EngineInstaller {
@@ -17,8 +18,8 @@ object EngineInstaller {
         val agyBinary = File(engineDir, "agy.va39")
         val ldLoader = File(engineDir, "ld-linux-aarch64.so.1")
 
-        if (agyBinary.exists() && ldLoader.exists()) {
-            Log.i(TAG, "Engine already installed in $engineDir")
+        if (agyBinary.exists() && ldLoader.exists() && agyBinary.length() > 10_000_000) {
+            Log.i(TAG, "Engine already installed in $engineDir (${agyBinary.length()} bytes)")
             return@withContext engineDir
         }
 
@@ -33,8 +34,16 @@ object EngineInstaller {
                 }
             }
 
-            // Extract tar.gz into engine directory
-            extractTarGz(tarGzFile, engineDir)
+            // Extract using Toybox tar on Android
+            val pb = ProcessBuilder(
+                "/system/bin/toybox", "tar", "-xzf", tarGzFile.absolutePath, "-C", engineDir.absolutePath
+            )
+            pb.redirectErrorStream(true)
+            val proc = pb.start()
+            val output = proc.inputStream.bufferedReader().readText()
+            val exitCode = proc.waitFor()
+            Log.i(TAG, "Tar extraction exit code: $exitCode, output: $output")
+
             tarGzFile.delete()
 
             // Set executable permissions
@@ -42,31 +51,11 @@ object EngineInstaller {
             agyBinary.setExecutable(true, false)
             File(engineDir, "lib").listFiles()?.forEach { it.setExecutable(true, false) }
 
-            Log.i(TAG, "Engine successfully unpacked and configured.")
+            Log.i(TAG, "Engine ready: agy.va39 exists=${agyBinary.exists()} size=${agyBinary.length()}")
         } catch (e: Exception) {
             Log.e(TAG, "Failed to unpack engine bundle", e)
         }
 
         engineDir
-    }
-
-    private fun extractTarGz(archiveFile: File, outputDir: File) {
-        // Simple and robust tar extractor using ProcessBuilder or stream
-        val pb = ProcessBuilder("tar", "-xzf", archiveFile.absolutePath, "-C", outputDir.absolutePath)
-        val proc = pb.start()
-        val exitCode = proc.waitFor()
-        if (exitCode != 0) {
-            // Fallback manual untar if tar binary is absent in system
-            manualUntar(archiveFile, outputDir)
-        }
-    }
-
-    private fun manualUntar(archiveFile: File, outputDir: File) {
-        archiveFile.inputStream().use { fi ->
-            GZIPInputStream(fi).use { gzi ->
-                val buffer = ByteArray(4096)
-                // Fallback stream copy if needed
-            }
-        }
     }
 }

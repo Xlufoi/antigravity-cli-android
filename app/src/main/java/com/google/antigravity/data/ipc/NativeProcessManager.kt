@@ -35,7 +35,6 @@ class NativeProcessManager(
                 return@withContext true
             }
 
-            // Ensure standalone engine is unpacked into app private filesDir
             val engineDir = EngineInstaller.ensureInstalled(context)
             val ldLoader = File(engineDir, "ld-linux-aarch64.so.1")
             val agyBinary = File(engineDir, "agy.va39")
@@ -49,12 +48,18 @@ class NativeProcessManager(
             val workspaceDir = File(workspacePath)
             if (!workspaceDir.exists()) workspaceDir.mkdirs()
 
-            // Prepare local user config and oauth token
+            // Prepare local gemini config folder inside app's private filesDir
             val geminiDir = File(context.filesDir, ".gemini/antigravity-cli")
             geminiDir.mkdirs()
+
+            // Automatically provision initial OAuth token if available
+            val tokenFile = File(geminiDir, "antigravity-oauth-token")
             if (!oauthToken.isNullOrBlank()) {
-                val tokenFile = File(geminiDir, "antigravity-oauth-token")
-                val tokenJson = """{"token":{"access_token":"$oauthToken"}}"""
+                val tokenJson = if (oauthToken.trim().startsWith("{")) {
+                    oauthToken.trim()
+                } else {
+                    """{"token":{"access_token":"${oauthToken.trim()}"}}"""
+                }
                 tokenFile.writeText(tokenJson)
             }
 
@@ -71,6 +76,7 @@ class NativeProcessManager(
 
             val pb = ProcessBuilder(command)
             pb.directory(workspaceDir)
+            pb.redirectErrorStream(false)
 
             val env = pb.environment()
             env["HOME"] = context.filesDir.absolutePath
@@ -105,21 +111,45 @@ class NativeProcessManager(
     fun observeEvents(): Flow<AgpStreamMessage> = flow {
         val proc = process ?: return@flow
         val reader = BufferedReader(InputStreamReader(proc.inputStream))
+        val errReader = BufferedReader(InputStreamReader(proc.errorStream))
+
+        // Monitor stdout
         try {
             var line: String?
             while (proc.isAlive) {
                 line = reader.readLine() ?: break
                 if (line.isNotBlank()) {
-                    try {
-                        val message = json.decodeFromString<AgpStreamMessage>(line)
-                        emit(message)
-                    } catch (e: Exception) {
-                        emit(AgpStreamMessage(type = "text", text = line))
+                    // Check if stdout contains an auth URL prompt
+                    if (line.contains("https://accounts.google.com") || line.contains("https://") && line.contains("oauth")) {
+                        emit(AgpStreamMessage(type = "auth_url", text = line))
+                    } else {
+                        try {
+                            val message = json.decodeFromString<AgpStreamMessage>(line)
+                            emit(message)
+                        } catch (e: Exception) {
+                            emit(AgpStreamMessage(type = "text", text = line))
+                        }
                     }
                 }
             }
         } catch (e: Exception) {
             Log.e(TAG, "Error reading from process stdout", e)
+        }
+    }.flowOn(Dispatchers.IO)
+
+    fun observeErrorStream(): Flow<String> = flow {
+        val proc = process ?: return@flow
+        val errReader = BufferedReader(InputStreamReader(proc.errorStream))
+        try {
+            var errLine: String?
+            while (proc.isAlive) {
+                errLine = errReader.readLine() ?: break
+                if (errLine.isNotBlank()) {
+                    emit(errLine)
+                }
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error reading stderr", e)
         }
     }.flowOn(Dispatchers.IO)
 
