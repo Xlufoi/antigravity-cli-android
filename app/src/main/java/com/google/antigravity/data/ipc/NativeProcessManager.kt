@@ -46,6 +46,7 @@ class NativeProcessManager(
         AppLogger.log(TAG, "Checking engine: agyBinary=${agyBinary.exists()}, nativeLd=${nativeLd.exists()} => ready=$ready")
 
         if (ready) {
+            EngineInstaller.setupSandboxLinuxEnvironment(context)
             File(workspacePath).mkdirs()
             val geminiDir = File(context.filesDir, ".gemini/antigravity-cli")
             geminiDir.mkdirs()
@@ -262,12 +263,6 @@ class NativeProcessManager(
             libDir.absolutePath
         ).joinToString(":")
 
-        val effortValue = when {
-            model.contains("high", ignoreCase = true) -> "high"
-            model.contains("medium", ignoreCase = true) -> "medium"
-            else -> "low"
-        }
-
         val command = mutableListOf(
             nativeLd.absolutePath,
             "--library-path", libraryPaths,
@@ -275,10 +270,23 @@ class NativeProcessManager(
             "-p", prompt,
             "--continue",
             "--output-format", "stream-json",
-            "--model", model,
-            "--effort", effortValue,
-            "--add-dir", workspaceDir.absolutePath
+            "--model", model
         )
+
+        // Only pass --effort for models that support it (Gemini). Claude and GPT do not support --effort.
+        if (!model.startsWith("claude", ignoreCase = true) && !model.startsWith("gpt", ignoreCase = true)) {
+            val effortValue = when {
+                model.contains("high", ignoreCase = true) -> "high"
+                model.contains("medium", ignoreCase = true) -> "medium"
+                else -> "low"
+            }
+            command.add("--effort")
+            command.add(effortValue)
+        }
+
+        command.add("--add-dir")
+        command.add(workspaceDir.absolutePath)
+
         if (autoApprovePermissions) {
             command.add("--dangerously-skip-permissions")
         }
@@ -301,6 +309,15 @@ class NativeProcessManager(
         env["PWD"] = workspaceDir.absolutePath
         val tmpDir = File(context.cacheDir, "tmp").apply { mkdirs() }
         env["TMPDIR"] = tmpDir.absolutePath
+
+        // Set up sandbox Linux and Termux paths
+        val binDir = File(context.filesDir, "bin")
+        val termuxBin = "/data/data/com.termux/files/usr/bin"
+        val systemBin = "/system/bin:/system/xbin:/product/bin:/apex/com.android.runtime/bin"
+        env["PATH"] = "${binDir.absolutePath}:$termuxBin:$systemBin"
+        env["SHELL"] = if (File(binDir, "bash").exists()) File(binDir, "bash").absolutePath else "/system/bin/sh"
+        env["PREFIX"] = context.filesDir.absolutePath
+        env["TERMUX_PREFIX"] = "/data/data/com.termux/files/usr"
 
         var doneEmitted = false
         fun emitDone() {
@@ -518,6 +535,8 @@ class NativeProcessManager(
         }
     }
 
+    private var currentAuthProcess: Process? = null
+
     fun generateAuthUrl(): Flow<String> = channelFlow {
         val engineDir = File(context.filesDir, "engine")
         val agyBinary = File(engineDir, "agy.va39")
@@ -525,7 +544,17 @@ class NativeProcessManager(
         val nativeLd = File(nativeLibDir, "libld.so")
         val libDir = File(engineDir, "lib")
         val caCertFile = File(context.filesDir, "cacert.pem")
-        val tempGeminiDir = File(context.cacheDir, "temp_auth_${UUID.randomUUID()}").apply { mkdirs() }
+        val geminiDir = File(context.filesDir, ".gemini/antigravity-cli").apply { mkdirs() }
+
+        // Temporarily backup existing token so agy initiates a new login flow
+        val tokenFile = File(geminiDir, "antigravity-oauth-token")
+        val tokenBackup = File(geminiDir, "antigravity-oauth-token.bak")
+        if (tokenFile.exists()) {
+            try {
+                tokenFile.copyTo(tokenBackup, overwrite = true)
+                tokenFile.delete()
+            } catch (_: Exception) {}
+        }
 
         val libraryPaths = listOf(nativeLibDir.absolutePath, libDir.absolutePath).joinToString(":")
         val command = listOf(
@@ -539,18 +568,21 @@ class NativeProcessManager(
         val pb = ProcessBuilder(command)
         val env = pb.environment()
         env["HOME"] = context.filesDir.absolutePath
-        env["ANTIGRAVITY_APP_DATA_DIR"] = tempGeminiDir.absolutePath
+        env["ANTIGRAVITY_APP_DATA_DIR"] = geminiDir.absolutePath
         env["SSL_CERT_FILE"] = caCertFile.absolutePath
         env["TERM"] = "xterm-256color"
         env["GODEBUG"] = "netdns=cgo"
         env["RES_OPTIONS"] = "timeout:2 attempts:3"
+        val binDir = File(context.filesDir, "bin")
+        env["PATH"] = "${binDir.absolutePath}:/data/data/com.termux/files/usr/bin:/system/bin:/system/xbin"
 
         try {
             val proc = pb.start()
+            currentAuthProcess = proc
             val errReader = BufferedReader(InputStreamReader(proc.errorStream))
             val outReader = BufferedReader(InputStreamReader(proc.inputStream))
 
-            val thread = Thread {
+            val errThread = Thread {
                 try {
                     errReader.forEachLine { line ->
                         AppLogger.log(TAG, "AUTH STDERR: $line")
@@ -562,23 +594,95 @@ class NativeProcessManager(
                     }
                 } catch (_: Exception) {}
             }
-            thread.start()
+            errThread.start()
 
-            outReader.forEachLine { line ->
-                AppLogger.log(TAG, "AUTH STDOUT: $line")
-                if (line.contains("https://accounts.google.com/o/oauth2/auth") || (line.contains("https://") && line.contains("oauth"))) {
-                    val start = line.indexOf("https://")
-                    val url = line.substring(start).trim()
-                    trySend(url)
-                }
+            val outThread = Thread {
+                try {
+                    outReader.forEachLine { line ->
+                        AppLogger.log(TAG, "AUTH STDOUT: $line")
+                        if (line.contains("https://accounts.google.com/o/oauth2/auth") || (line.contains("https://") && line.contains("oauth"))) {
+                            val start = line.indexOf("https://")
+                            val url = line.substring(start).trim()
+                            trySend(url)
+                        }
+                    }
+                } catch (_: Exception) {}
             }
+            outThread.start()
 
-            thread.join(8000)
-            proc.destroy()
+            // Wait up to 120 seconds for the user to complete login in browser
+            proc.waitFor(120, java.util.concurrent.TimeUnit.SECONDS)
+
+            // If login completed and new token exists, clean up backup
+            if (tokenFile.exists() && tokenFile.length() > 0L) {
+                tokenBackup.delete()
+                AppLogger.log(TAG, "OAuth token successfully created via browser login!")
+            } else if (tokenBackup.exists()) {
+                tokenBackup.copyTo(tokenFile, overwrite = true)
+                tokenBackup.delete()
+            }
         } catch (e: Exception) {
             AppLogger.log(TAG, "Auth generation error: ${e.message}")
+            if (tokenBackup.exists() && !tokenFile.exists()) {
+                tokenBackup.copyTo(tokenFile, overwrite = true)
+                tokenBackup.delete()
+            }
         } finally {
-            tempGeminiDir.deleteRecursively()
+            currentAuthProcess = null
         }
     }.flowOn(Dispatchers.IO)
+
+    fun submitAuthCode(input: String): Boolean {
+        return try {
+            val code = if (input.contains("code=")) {
+                val uri = Uri.parse(input)
+                uri.getQueryParameter("code") ?: input.substringAfter("code=").substringBefore("&")
+            } else {
+                input.trim()
+            }
+            val proc = currentAuthProcess
+            if (proc != null && proc.isAlive) {
+                AppLogger.log(TAG, "Piping auth code to process stdin...")
+                proc.outputStream.write((code + "\n").toByteArray())
+                proc.outputStream.flush()
+                true
+            } else {
+                AppLogger.log(TAG, "Cannot submit code: auth process is not active")
+                false
+            }
+        } catch (e: Exception) {
+            AppLogger.log(TAG, "Error submitting auth code: ${e.message}")
+            false
+        }
+    }
+
+    fun executeShellCommand(cmd: String, isRoot: Boolean, isShizuku: Boolean): String {
+        return when {
+            isRoot -> {
+                val fullCmd = "export PATH=/data/data/com.termux/files/usr/bin:\$PATH; export LD_LIBRARY_PATH=/data/data/com.termux/files/usr/lib; export HOME=/data/data/com.termux/files/home; $cmd"
+                RootHelper.executeRootCommand(fullCmd)
+            }
+            isShizuku -> {
+                ShizukuManager.executeAdb(cmd)
+            }
+            else -> {
+                try {
+                    val binDir = File(context.filesDir, "bin")
+                    val pb = ProcessBuilder("/system/bin/sh", "-c", cmd)
+                    pb.directory(File(workspacePath))
+                    val env = pb.environment()
+                    env["PATH"] = "${binDir.absolutePath}:/data/data/com.termux/files/usr/bin:/system/bin:/system/xbin"
+                    env["HOME"] = context.filesDir.absolutePath
+                    env["SHELL"] = "/system/bin/sh"
+                    val proc = pb.start()
+                    val output = proc.inputStream.bufferedReader().use { it.readText() }
+                    val error = proc.errorStream.bufferedReader().use { it.readText() }
+                    proc.waitFor()
+                    if (output.isNotBlank()) output.trim() else if (error.isNotBlank()) error.trim() else "Команда выполнена успешно (вывод пуст)"
+                } catch (e: Exception) {
+                    "Ошибка песочницы: ${e.message}"
+                }
+            }
+        }
+    }
 }

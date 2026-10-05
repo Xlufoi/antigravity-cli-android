@@ -26,6 +26,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.google.antigravity.data.ipc.AppLogger
 import com.google.antigravity.ui.chat.components.ChatInputBar
+import com.google.antigravity.ui.chat.components.ChatSessionsDialog
 import com.google.antigravity.ui.chat.components.MessageBubble
 import com.google.antigravity.ui.chat.components.ModelSelectorDialog
 import com.google.antigravity.ui.chat.components.WorkspacePickerDialog
@@ -45,6 +46,7 @@ fun ChatScreen(
 
     var showModelDialog by remember { mutableStateOf(false) }
     var showWorkspaceDialog by remember { mutableStateOf(false) }
+    var showSessionsDialog by remember { mutableStateOf(false) }
 
     // Auto-scroll when messages change or new streaming tokens arrive
     LaunchedEffect(uiState.messages.size) {
@@ -63,8 +65,18 @@ fun ChatScreen(
     }
 
     Scaffold(
+        contentWindowInsets = WindowInsets(0, 0, 0, 0),
         topBar = {
             TopAppBar(
+                navigationIcon = {
+                    IconButton(onClick = { showSessionsDialog = true }) {
+                        Icon(
+                            Icons.Default.History,
+                            contentDescription = "История диалогов",
+                            tint = AgTerminalPrompt
+                        )
+                    }
+                },
                 title = {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Text(
@@ -191,16 +203,36 @@ fun ChatScreen(
                                     .fillMaxWidth()
                                     .padding(vertical = 8.dp)
                             ) {
+                                val activeSession = uiState.sessions.find { it.id == uiState.currentSessionId }
+                                val sessionTitle = activeSession?.title ?: "Новый диалог"
+
                                 Column(modifier = Modifier.padding(10.dp)) {
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Text(
+                                            text = "Google Antigravity CLI • $sessionTitle",
+                                            fontFamily = FontFamily.Monospace,
+                                            fontWeight = FontWeight.Bold,
+                                            fontSize = 11.sp,
+                                            color = AgTerminalPrompt,
+                                            maxLines = 1,
+                                            modifier = Modifier.weight(1f)
+                                        )
+                                        Text(
+                                            text = "[История]",
+                                            color = AgAccent,
+                                            fontSize = 10.sp,
+                                            fontFamily = FontFamily.Monospace,
+                                            fontWeight = FontWeight.Bold,
+                                            modifier = Modifier.clickable { showSessionsDialog = true }
+                                        )
+                                    }
+                                    Spacer(modifier = Modifier.height(2.dp))
                                     Text(
-                                        text = "Google Antigravity CLI (va39) • On-Device Engine",
-                                        fontFamily = FontFamily.Monospace,
-                                        fontWeight = FontWeight.Bold,
-                                        fontSize = 11.sp,
-                                        color = AgTerminalPrompt
-                                    )
-                                    Text(
-                                        text = "Рабочая директория: ${uiState.workspacePath}",
+                                        text = "Папка: ${uiState.workspacePath}",
                                         fontFamily = FontFamily.Monospace,
                                         fontSize = 10.sp,
                                         color = AgTextSecondary
@@ -210,6 +242,12 @@ fun ChatScreen(
                                         fontFamily = FontFamily.Monospace,
                                         fontSize = 10.sp,
                                         color = AgTerminalPurple
+                                    )
+                                    Text(
+                                        text = "Подсказка: команды Linux/Termux можно запускать через '! <команда>'",
+                                        fontFamily = FontFamily.Monospace,
+                                        fontSize = 9.sp,
+                                        color = AgTerminalDim
                                     )
                                 }
                             }
@@ -318,6 +356,18 @@ fun ChatScreen(
             currentPath = uiState.workspacePath,
             onSelectPath = { viewModel.updateWorkspace(it) },
             onDismiss = { showWorkspaceDialog = false }
+        )
+    }
+
+    // Chat Sessions & History Dialog
+    if (showSessionsDialog) {
+        ChatSessionsDialog(
+            sessions = uiState.sessions,
+            currentSessionId = uiState.currentSessionId,
+            onSelectSession = { viewModel.switchChat(it) },
+            onNewChat = { viewModel.createNewChat() },
+            onDeleteSession = { viewModel.deleteChat(it) },
+            onDismiss = { showSessionsDialog = false }
         )
     }
 }

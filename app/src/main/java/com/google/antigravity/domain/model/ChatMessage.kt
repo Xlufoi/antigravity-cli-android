@@ -1,13 +1,16 @@
 package com.google.antigravity.domain.model
 
+import kotlinx.serialization.Serializable
 import java.util.UUID
 
+@Serializable
 enum class MessageSender {
     USER,
     AGENT,
     SYSTEM
 }
 
+@Serializable
 enum class ToolStatus {
     PENDING,
     RUNNING,
@@ -15,6 +18,7 @@ enum class ToolStatus {
     FAILED
 }
 
+@Serializable
 data class ToolCall(
     val id: String = UUID.randomUUID().toString(),
     val name: String,
@@ -24,6 +28,7 @@ data class ToolCall(
     val output: String? = null
 )
 
+@Serializable
 data class ChatMessage(
     val id: String = UUID.randomUUID().toString(),
     val sender: MessageSender,

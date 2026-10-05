@@ -197,4 +197,15 @@ class AgentRepositoryImpl(private val context: Context) : AgentRepository {
     override fun getUsageStats(): StateFlow<UsageStats> {
         return processManager?.usageStats ?: MutableStateFlow(UsageStats()).asStateFlow()
     }
+
+    override val chatHistoryManager by lazy { ChatHistoryManager(context) }
+
+    override fun submitAuthCode(code: String): Boolean {
+        return processManager?.submitAuthCode(code) ?: false
+    }
+
+    override fun executeShellCommand(cmd: String, isRoot: Boolean, isShizuku: Boolean): String {
+        val manager = processManager ?: NativeProcessManager(context = context)
+        return manager.executeShellCommand(cmd, isRoot = isRoot, isShizuku = isShizuku)
+    }
 }

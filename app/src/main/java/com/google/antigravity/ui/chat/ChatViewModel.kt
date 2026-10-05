@@ -6,6 +6,8 @@ import com.google.antigravity.data.ipc.AccountProfile
 import com.google.antigravity.data.ipc.RootHelper
 import com.google.antigravity.data.ipc.ShizukuManager
 import com.google.antigravity.domain.model.ChatMessage
+import com.google.antigravity.domain.model.ChatSession
+import com.google.antigravity.domain.model.MessageSender
 import com.google.antigravity.domain.model.ModelInfo
 import com.google.antigravity.domain.model.UsageStats
 import com.google.antigravity.domain.repository.AgentRepository
@@ -14,6 +16,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import java.util.UUID
 
 enum class AppTab {
     CONSOLE,
@@ -23,6 +26,8 @@ enum class AppTab {
 
 data class ChatUiState(
     val currentTab: AppTab = AppTab.CONSOLE,
+    val currentSessionId: String = UUID.randomUUID().toString(),
+    val sessions: List<ChatSession> = emptyList(),
     val messages: List<ChatMessage> = emptyList(),
     val isStreaming: Boolean = false,
     val isEngineReady: Boolean = false,
@@ -41,9 +46,10 @@ data class ChatUiState(
     // Accounts
     val accounts: List<AccountProfile> = emptyList(),
     val currentTokenSnippet: String = "",
-    // Auth URL generator
+    // Auth URL generator & In-app OAuth WebView
     val generatedAuthUrl: String? = null,
     val isGeneratingAuthUrl: Boolean = false,
+    val showOAuthWebView: Boolean = false,
     // Quota & Usage
     val usageStats: UsageStats = UsageStats()
 )
@@ -62,6 +68,7 @@ class ChatViewModel(
         loadModels()
         loadAccounts()
         checkSystemPrivileges()
+        loadSessions()
         initEngine()
     }
 
@@ -73,6 +80,126 @@ class ChatViewModel(
         }
     }
 
+    // --- Chat Sessions & Persistence ---
+    private fun loadSessions() {
+        viewModelScope.launch {
+            val sessionsList = repository.chatHistoryManager.getAllSessions()
+            val lastActiveId = repository.chatHistoryManager.getLastActiveSessionId()
+            val activeSession = sessionsList.find { it.id == lastActiveId } ?: sessionsList.firstOrNull()
+
+            if (activeSession != null) {
+                _uiState.update {
+                    it.copy(
+                        sessions = sessionsList,
+                        currentSessionId = activeSession.id,
+                        messages = activeSession.messages,
+                        activeModel = activeSession.model.ifBlank { it.activeModel },
+                        workspacePath = activeSession.workspace.ifBlank { it.workspacePath }
+                    )
+                }
+            } else {
+                val newId = UUID.randomUUID().toString()
+                val newSession = ChatSession(
+                    id = newId,
+                    title = "Новый диалог",
+                    model = _uiState.value.activeModel,
+                    workspace = _uiState.value.workspacePath
+                )
+                repository.chatHistoryManager.saveSession(newSession)
+                repository.chatHistoryManager.setLastActiveSessionId(newId)
+                _uiState.update {
+                    it.copy(
+                        sessions = listOf(newSession),
+                        currentSessionId = newId,
+                        messages = emptyList()
+                    )
+                }
+            }
+        }
+    }
+
+    fun createNewChat() {
+        viewModelScope.launch {
+            val newId = UUID.randomUUID().toString()
+            val newSession = ChatSession(
+                id = newId,
+                title = "Новый диалог",
+                model = _uiState.value.activeModel,
+                workspace = _uiState.value.workspacePath
+            )
+            repository.chatHistoryManager.saveSession(newSession)
+            repository.chatHistoryManager.setLastActiveSessionId(newId)
+            val updatedSessions = repository.chatHistoryManager.getAllSessions()
+
+            _uiState.update {
+                it.copy(
+                    sessions = updatedSessions,
+                    currentSessionId = newId,
+                    messages = emptyList()
+                )
+            }
+        }
+    }
+
+    fun switchChat(sessionId: String) {
+        viewModelScope.launch {
+            val session = repository.chatHistoryManager.getSession(sessionId) ?: return@launch
+            repository.chatHistoryManager.setLastActiveSessionId(sessionId)
+            val updatedSessions = repository.chatHistoryManager.getAllSessions()
+
+            _uiState.update {
+                it.copy(
+                    sessions = updatedSessions,
+                    currentSessionId = session.id,
+                    messages = session.messages,
+                    activeModel = session.model.ifBlank { it.activeModel }
+                )
+            }
+        }
+    }
+
+    fun deleteChat(sessionId: String) {
+        viewModelScope.launch {
+            repository.chatHistoryManager.deleteSession(sessionId)
+            val updatedSessions = repository.chatHistoryManager.getAllSessions()
+            if (_uiState.value.currentSessionId == sessionId) {
+                if (updatedSessions.isNotEmpty()) {
+                    switchChat(updatedSessions.first().id)
+                } else {
+                    createNewChat()
+                }
+            } else {
+                _uiState.update { it.copy(sessions = updatedSessions) }
+            }
+        }
+    }
+
+    private fun persistCurrentMessages(newMessages: List<ChatMessage>) {
+        viewModelScope.launch {
+            val currentId = _uiState.value.currentSessionId
+            var currentTitle = _uiState.value.sessions.find { it.id == currentId }?.title ?: "Новый диалог"
+            if (currentTitle == "Новый диалог" && newMessages.any { it.sender == MessageSender.USER }) {
+                val firstUserMsg = newMessages.first { it.sender == MessageSender.USER }.text.trim()
+                if (firstUserMsg.isNotBlank()) {
+                    currentTitle = firstUserMsg.take(28) + if (firstUserMsg.length > 28) "…" else ""
+                }
+            }
+
+            val session = ChatSession(
+                id = currentId,
+                title = currentTitle,
+                updatedAt = System.currentTimeMillis(),
+                messages = newMessages,
+                model = _uiState.value.activeModel,
+                workspace = _uiState.value.workspacePath
+            )
+            repository.chatHistoryManager.saveSession(session)
+            val updatedSessions = repository.chatHistoryManager.getAllSessions()
+            _uiState.update { it.copy(sessions = updatedSessions) }
+        }
+    }
+
+    // --- Engine & Execution ---
     fun initEngine(token: String? = null) {
         viewModelScope.launch {
             val tokenToUse = token ?: _uiState.value.oauthToken.ifBlank { null }
@@ -103,6 +230,7 @@ class ChatViewModel(
                     } else {
                         state.messages + incomingMsg
                     }
+                    persistCurrentMessages(updatedList)
                     state.copy(
                         messages = updatedList,
                         isStreaming = incomingMsg.isStreaming
@@ -152,6 +280,7 @@ class ChatViewModel(
         _uiState.update { it.copy(autoApprove = next) }
     }
 
+    // --- OAuth & Browser Login ---
     fun requestAuthUrl() {
         viewModelScope.launch {
             _uiState.update { it.copy(isGeneratingAuthUrl = true, generatedAuthUrl = null) }
@@ -159,6 +288,26 @@ class ChatViewModel(
                 _uiState.update { it.copy(generatedAuthUrl = url, isGeneratingAuthUrl = false) }
             }
         }
+    }
+
+    fun openOAuthWebView() {
+        _uiState.update { it.copy(showOAuthWebView = true) }
+    }
+
+    fun closeOAuthWebView() {
+        _uiState.update { it.copy(showOAuthWebView = false) }
+    }
+
+    fun submitAuthCode(code: String): Boolean {
+        val success = repository.submitAuthCode(code)
+        if (success) {
+            viewModelScope.launch {
+                loadAccounts()
+                initEngine()
+                _uiState.update { it.copy(showOAuthWebView = false, generatedAuthUrl = null) }
+            }
+        }
+        return success
     }
 
     fun loadAccounts() {
@@ -225,10 +374,50 @@ class ChatViewModel(
         }
     }
 
+    // --- Message Sending & Shell Execution ---
     fun sendMessage(prompt: String) {
+        val trimmed = prompt.trim()
+        if (trimmed.isEmpty()) return
+
+        // Direct Linux / Termux shell command execution
+        if (trimmed.startsWith("!") || trimmed.startsWith("$")) {
+            val shellCmd = trimmed.substring(1).trim()
+            val userMsg = ChatMessage(
+                id = UUID.randomUUID().toString(),
+                sender = MessageSender.USER,
+                text = prompt
+            )
+            val updatedWithUser = _uiState.value.messages + userMsg
+            _uiState.update { it.copy(messages = updatedWithUser) }
+            persistCurrentMessages(updatedWithUser)
+
+            viewModelScope.launch {
+                val output = repository.executeShellCommand(
+                    cmd = shellCmd,
+                    isRoot = _uiState.value.isRootGranted,
+                    isShizuku = _uiState.value.isShizukuGranted
+                )
+                val prefix = when {
+                    _uiState.value.isRootGranted -> "[root@android]#"
+                    _uiState.value.isShizukuGranted -> "[adb@shizuku]$"
+                    else -> "[sandbox@agy]$"
+                }
+                val sysMsg = ChatMessage(
+                    id = UUID.randomUUID().toString(),
+                    sender = MessageSender.SYSTEM,
+                    text = "$prefix $shellCmd\n$output"
+                )
+                val updatedWithSys = _uiState.value.messages + sysMsg
+                _uiState.update { it.copy(messages = updatedWithSys) }
+                persistCurrentMessages(updatedWithSys)
+            }
+            return
+        }
+
+        // Standard AI turn
         viewModelScope.launch {
             _uiState.update { it.copy(isStreaming = true) }
-            repository.sendMessage(prompt)
+            repository.sendMessage(trimmed)
         }
     }
 

@@ -47,6 +47,19 @@ fun ControlCenterScreen(
     var showAddAccountDialog by remember { mutableStateOf(false) }
     var tokenInput by remember { mutableStateOf("") }
 
+    if (uiState.showOAuthWebView && uiState.generatedAuthUrl != null) {
+        OAuthWebViewDialog(
+            authUrl = uiState.generatedAuthUrl,
+            onAuthCodeReceived = { code ->
+                val ok = viewModel.submitAuthCode(code)
+                if (ok) {
+                    Toast.makeText(context, "Авторизация успешно завершена!", Toast.LENGTH_LONG).show()
+                }
+            },
+            onDismiss = { viewModel.closeOAuthWebView() }
+        )
+    }
+
     Column(
         modifier = modifier
             .fillMaxSize()
@@ -113,6 +126,17 @@ fun ControlCenterScreen(
                             )
                             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                 Button(
+                                    onClick = { viewModel.openOAuthWebView() },
+                                    colors = ButtonDefaults.buttonColors(containerColor = AgAccent),
+                                    shape = RoundedCornerShape(6.dp),
+                                    modifier = Modifier.weight(1f)
+                                ) {
+                                    Icon(Icons.Default.Language, contentDescription = null, tint = Color.Black, modifier = Modifier.size(16.dp))
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Text("В приложении", fontSize = 11.sp, color = Color.Black, fontWeight = FontWeight.Bold)
+                                }
+
+                                Button(
                                     onClick = {
                                         try {
                                             val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url)).apply {
@@ -127,9 +151,9 @@ fun ControlCenterScreen(
                                     shape = RoundedCornerShape(6.dp),
                                     modifier = Modifier.weight(1f)
                                 ) {
-                                    Icon(Icons.Default.OpenInBrowser, contentDescription = null, modifier = Modifier.size(16.dp))
-                                    Spacer(modifier = Modifier.width(6.dp))
-                                    Text("Открыть браузер", fontSize = 12.sp, color = Color.Black)
+                                    Icon(Icons.Default.OpenInBrowser, contentDescription = null, tint = Color.Black, modifier = Modifier.size(16.dp))
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Text("Браузер", fontSize = 11.sp, color = Color.Black)
                                 }
 
                                 OutlinedButton(
@@ -148,11 +172,11 @@ fun ControlCenterScreen(
                     }
                 }
 
-                // Direct Token Input
+                // Direct Token / Code Input
                 TextField(
                     value = tokenInput,
                     onValueChange = { tokenInput = it },
-                    placeholder = { Text("Вставьте код или токен (ya29... или JSON)...", fontSize = 12.sp, color = AgTextSecondary) },
+                    placeholder = { Text("Вставьте код (4/0A...) или ссылку с кодом...", fontSize = 12.sp, color = AgTextSecondary) },
                     textStyle = LocalTextStyle.current.copy(fontFamily = FontFamily.Monospace, fontSize = 11.sp),
                     colors = TextFieldDefaults.colors(
                         focusedContainerColor = AgSurfaceVariant,
@@ -168,16 +192,27 @@ fun ControlCenterScreen(
                     Button(
                         onClick = {
                             if (tokenInput.isNotBlank()) {
-                                viewModel.saveAccount("Основной токен", tokenInput.trim())
+                                val input = tokenInput.trim()
+                                if (input.startsWith("{") || input.contains("refresh_token") || input.contains("access_token")) {
+                                    viewModel.saveAccount("Основной токен", input)
+                                    Toast.makeText(context, "Токен сохранён и активирован!", Toast.LENGTH_SHORT).show()
+                                } else {
+                                    val submitted = viewModel.submitAuthCode(input)
+                                    if (submitted) {
+                                        Toast.makeText(context, "Код отправлен! Авторизация завершается...", Toast.LENGTH_LONG).show()
+                                    } else {
+                                        viewModel.saveAccount("Основной токен", input)
+                                        Toast.makeText(context, "Код сохранён как токен", Toast.LENGTH_SHORT).show()
+                                    }
+                                }
                                 tokenInput = ""
-                                Toast.makeText(context, "Токен сохранён и активирован!", Toast.LENGTH_SHORT).show()
                             }
                         },
                         colors = ButtonDefaults.buttonColors(containerColor = AgAccent),
                         shape = RoundedCornerShape(8.dp),
                         modifier = Modifier.weight(1f)
                     ) {
-                        Text("Применить токен", color = Color.Black, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                        Text("Отправить код / токен", color = Color.Black, fontSize = 12.sp, fontWeight = FontWeight.Bold)
                     }
 
                     OutlinedButton(

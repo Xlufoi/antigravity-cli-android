@@ -97,6 +97,7 @@ object EngineInstaller {
 
             val success = isEngineReady(context)
             if (success) {
+                setupSandboxLinuxEnvironment(context)
                 AppLogger.log(TAG, "INSTALLATION COMPLETED SUCCESSFULLY! Binary size=${agyBinary.length()}")
                 onProgress(1.0f, "Распаковка успешно завершена!")
             } else {
@@ -108,6 +109,45 @@ object EngineInstaller {
             AppLogger.log(TAG, "Installation exception: ${e.message}\n${e.stackTraceToString()}")
             onProgress(0f, "Исключение при распаковке: ${e.localizedMessage}")
             false
+        }
+    }
+
+    fun setupSandboxLinuxEnvironment(context: Context) {
+        try {
+            val binDir = File(context.filesDir, "bin").apply { mkdirs() }
+            
+            // 1. Create bash wrapper
+            val bashFile = File(binDir, "bash")
+            bashFile.writeText("#!/system/bin/sh\nexec /system/bin/sh \"\$@\"\n")
+            bashFile.setExecutable(true, false)
+            bashFile.setReadable(true, false)
+
+            // 2. Symlink/wrap standard toybox commands
+            val toybox = File("/system/bin/toybox")
+            val applets = listOf(
+                "sh", "cat", "ls", "grep", "sed", "awk", "find", "which",
+                "head", "tail", "touch", "mkdir", "cp", "mv", "rm", "chmod",
+                "env", "echo", "test", "sleep", "uname", "whoami", "id",
+                "date", "tar", "gzip", "wc", "sort", "uniq", "basename", "dirname"
+            )
+            for (applet in applets) {
+                val target = File(binDir, applet)
+                if (!target.exists()) {
+                    try {
+                        if (toybox.exists()) {
+                            target.writeText("#!/system/bin/sh\nexec /system/bin/toybox $applet \"\$@\"\n")
+                            target.setExecutable(true, false)
+                            target.setReadable(true, false)
+                        }
+                    } catch (_: Exception) {}
+                }
+            }
+
+            // 3. Ensure workspace directory exists
+            File(context.filesDir, "workspace").mkdirs()
+            AppLogger.log(TAG, "Sandbox Linux environment configured in ${binDir.absolutePath}")
+        } catch (e: Exception) {
+            AppLogger.log(TAG, "Error configuring sandbox environment: ${e.message}")
         }
     }
 }

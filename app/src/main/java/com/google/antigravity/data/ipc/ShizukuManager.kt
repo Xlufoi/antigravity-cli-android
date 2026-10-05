@@ -7,6 +7,19 @@ import java.io.InputStream
 object ShizukuManager {
     private const val TAG = "ShizukuManager"
 
+    init {
+        try {
+            Shizuku.addBinderReceivedListenerSticky {
+                AppLogger.log(TAG, "Shizuku binder received successfully")
+            }
+            Shizuku.addBinderDeadListener {
+                AppLogger.log(TAG, "Shizuku binder disconnected")
+            }
+        } catch (e: Throwable) {
+            AppLogger.log(TAG, "Failed registering Shizuku binder listeners: ${e.message}")
+        }
+    }
+
     fun isInstalled(): Boolean {
         return try {
             Shizuku.pingBinder()
@@ -39,8 +52,11 @@ object ShizukuManager {
 
     fun executeAdb(command: String): String {
         return try {
+            if (!isInstalled()) {
+                return "Ошибка: Служба Shizuku не запущена или не установлена."
+            }
             if (!isPermissionGranted()) {
-                return "Ошибка: Доступ Shizuku не предоставлен."
+                return "Ошибка: Доступ Shizuku не предоставлен. Нажмите 'Запросить доступ'."
             }
             val newProcessMethod = Shizuku::class.java.getDeclaredMethod(
                 "newProcess",
@@ -53,7 +69,7 @@ object ShizukuManager {
             val output = proc.inputStream.bufferedReader().use { it.readText() }
             val error = proc.errorStream.bufferedReader().use { it.readText() }
             proc.waitFor()
-            if (output.isNotBlank()) output.trim() else error.trim()
+            if (output.isNotBlank()) output.trim() else if (error.isNotBlank()) error.trim() else "Команда успешно выполнена (вывод пуст)"
         } catch (e: Throwable) {
             AppLogger.log(TAG, "Shizuku exec error: ${e.message}")
             "Ошибка Shizuku: ${e.localizedMessage}"

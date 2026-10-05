@@ -29,4 +29,7 @@ interface AgentRepository {
     fun isAutoApprove(): Boolean
     fun getUsageStats(): StateFlow<UsageStats>
     val accountManager: AccountManager
+    val chatHistoryManager: com.google.antigravity.data.ipc.ChatHistoryManager
+    fun submitAuthCode(code: String): Boolean
+    fun executeShellCommand(cmd: String, isRoot: Boolean, isShizuku: Boolean): String
 }

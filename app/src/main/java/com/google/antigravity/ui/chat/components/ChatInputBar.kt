@@ -52,6 +52,8 @@ fun ChatInputBar(
     Column(
         modifier = modifier
             .fillMaxWidth()
+            .navigationBarsPadding()
+            .imePadding()
             .background(AgDarkBackground)
             .border(1.dp, AgBorder, RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp))
             .padding(top = 8.dp, bottom = 10.dp, start = 10.dp, end = 10.dp)
