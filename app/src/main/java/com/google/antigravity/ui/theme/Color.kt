@@ -2,22 +2,28 @@ package com.google.antigravity.ui.theme
 
 import androidx.compose.ui.graphics.Color
 
-val AgDarkBackground = Color(0xFF0C0D11)
-val AgSurface = Color(0xFF14171F)
-val AgSurfaceVariant = Color(0xFF1E222B)
-val AgPrimary = Color(0xFF38BDF8)
-val AgSecondary = Color(0xFF818CF8)
-val AgAccent = Color(0xFF34D399)
-val AgUserBubble = Color(0xFF1E293B)
-val AgAgentBubble = Color(0xFF11141A)
-val AgTextPrimary = Color(0xFFF1F5F9)
-val AgTextSecondary = Color(0xFF94A3B8)
-val AgBorder = Color(0xFF262D3D)
-val AgError = Color(0xFFF87171)
+// Pure terminal black and crisp console colors
+val AgDarkBackground = Color(0xFF000000)
+val AgSurface = Color(0xFF0A0A0A)
+val AgSurfaceVariant = Color(0xFF141414)
+val AgBorder = Color(0xFF2E2E2E)
+val AgSeparator = Color(0xFF333333)
 
-// Console / Terminal specifics
-val AgTerminalPrompt = Color(0xFF38BDF8)
-val AgTerminalGreen = Color(0xFF34D399)
-val AgTerminalPurple = Color(0xFFA78BFA)
-val AgTerminalAmber = Color(0xFFFBBF24)
-val AgTerminalDim = Color(0xFF475569)
+// Text
+val AgTextPrimary = Color(0xFFEDEDED)
+val AgTextSecondary = Color(0xFF888888)
+val AgTerminalDim = Color(0xFF555555)
+
+// Console accents
+val AgPrimary = Color(0xFF4D8BFF)       // Console Blue
+val AgSecondary = Color(0xFF888888)     // Neutral Gray
+val AgAccent = Color(0xFF00E676)        // Console Green
+val AgError = Color(0xFFF85149)         // Console Red
+
+// Terminal specific highlights
+val AgTerminalPrompt = Color(0xFF4D8BFF) // Prompt blue
+val AgTerminalGreen = Color(0xFF00E676)  // Success / Active green
+val AgTerminalAmber = Color(0xFFD29922)  // Warning / Limit yellow
+val AgTerminalPurple = Color(0xFFA371F7) // Purple
+val AgUserBubble = Color(0xFF000000)
+val AgAgentBubble = Color(0xFF000000)

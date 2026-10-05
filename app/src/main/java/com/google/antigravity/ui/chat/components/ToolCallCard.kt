@@ -4,43 +4,39 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Build
-import androidx.compose.material.icons.filled.CheckCircle
-import androidx.compose.material.icons.filled.Warning
-import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.Icon
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.google.antigravity.domain.model.ToolCall
 import com.google.antigravity.domain.model.ToolStatus
-import com.google.antigravity.ui.theme.AgAccent
-import com.google.antigravity.ui.theme.AgBorder
-import com.google.antigravity.ui.theme.AgError
-import com.google.antigravity.ui.theme.AgSurfaceVariant
-import com.google.antigravity.ui.theme.AgTextPrimary
-import com.google.antigravity.ui.theme.AgTextSecondary
+import com.google.antigravity.ui.theme.*
 
 @Composable
 fun ToolCallCard(
     toolCall: ToolCall,
     modifier: Modifier = Modifier
 ) {
+    val statusText = when (toolCall.status) {
+        ToolStatus.RUNNING, ToolStatus.PENDING -> "[RUNNING]"
+        ToolStatus.COMPLETED -> "[OK]"
+        ToolStatus.FAILED -> "[FAILED]"
+    }
+    val statusColor = when (toolCall.status) {
+        ToolStatus.RUNNING, ToolStatus.PENDING -> AgTerminalAmber
+        ToolStatus.COMPLETED -> AgTerminalGreen
+        ToolStatus.FAILED -> AgError
+    }
+
     Column(
         modifier = modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(8.dp))
-            .background(AgSurfaceVariant)
-            .border(1.dp, AgBorder, RoundedCornerShape(8.dp))
-            .padding(12.dp)
+            .padding(vertical = 3.dp)
     ) {
         Row(
             verticalAlignment = Alignment.CenterVertically,
@@ -48,68 +44,50 @@ fun ToolCallCard(
             modifier = Modifier.fillMaxWidth()
         ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(
-                    imageVector = Icons.Default.Build,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.size(16.dp)
-                )
-                Spacer(modifier = Modifier.width(8.dp))
                 Text(
-                    text = toolCall.name,
-                    color = AgTextPrimary,
-                    fontSize = 14.sp,
-                    fontFamily = FontFamily.Monospace
+                    text = "▸ ",
+                    color = AgTextSecondary,
+                    fontFamily = FontFamily.Monospace,
+                    fontSize = 12.sp
+                )
+                Text(
+                    text = "[tool: ${toolCall.name}]",
+                    color = AgTerminalPrompt,
+                    fontFamily = FontFamily.Monospace,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 12.sp
                 )
             }
 
-            when (toolCall.status) {
-                ToolStatus.RUNNING, ToolStatus.PENDING -> {
-                    CircularProgressIndicator(
-                        modifier = Modifier.size(14.dp),
-                        strokeWidth = 2.dp,
-                        color = MaterialTheme.colorScheme.primary
-                    )
-                }
-                ToolStatus.COMPLETED -> {
-                    Icon(
-                        imageVector = Icons.Default.CheckCircle,
-                        contentDescription = "Success",
-                        tint = AgAccent,
-                        modifier = Modifier.size(16.dp)
-                    )
-                }
-                ToolStatus.FAILED -> {
-                    Icon(
-                        imageVector = Icons.Default.Warning,
-                        contentDescription = "Error",
-                        tint = AgError,
-                        modifier = Modifier.size(16.dp)
-                    )
-                }
-            }
+            Text(
+                text = statusText,
+                color = statusColor,
+                fontFamily = FontFamily.Monospace,
+                fontWeight = FontWeight.Bold,
+                fontSize = 11.sp
+            )
         }
 
-        Spacer(modifier = Modifier.height(4.dp))
-        Text(
-            text = toolCall.summary,
-            color = AgTextSecondary,
-            fontSize = 12.sp
-        )
+        if (toolCall.summary.isNotBlank()) {
+            Text(
+                text = "  ${toolCall.summary}",
+                color = AgTextSecondary,
+                fontFamily = FontFamily.Monospace,
+                fontSize = 11.sp,
+                modifier = Modifier.padding(top = 2.dp)
+            )
+        }
 
         toolCall.output?.let { output ->
-            Spacer(modifier = Modifier.height(6.dp))
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .background(Color.Black.copy(alpha = 0.4f), RoundedCornerShape(4.dp))
-                    .padding(8.dp)
-            ) {
+            if (output.isNotBlank()) {
+                val cleanOutput = output.take(800) + if (output.length > 800) "\n... [truncated]" else ""
                 Text(
-                    text = output.take(300),
-                    color = AgTextSecondary,
+                    text = "└  $cleanOutput",
+                    color = AgTerminalDim,
+                    fontFamily = FontFamily.Monospace,
                     fontSize = 11.sp,
-                    fontFamily = FontFamily.Monospace
+                    lineHeight = 15.sp,
+                    modifier = Modifier.padding(top = 2.dp, start = 4.dp)
                 )
             }
         }

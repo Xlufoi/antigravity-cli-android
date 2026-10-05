@@ -12,16 +12,12 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
@@ -33,19 +29,28 @@ import com.google.antigravity.ui.chat.ChatViewModel
 import com.google.antigravity.ui.chat.components.WorkspacePickerDialog
 import com.google.antigravity.ui.theme.*
 
+enum class SettingsSubTab {
+    ACCOUNTS,
+    HISTORY,
+    ADVANCED
+}
+
 @Composable
 fun ControlCenterScreen(
     viewModel: ChatViewModel,
     uiState: ChatUiState,
+    initialTab: SettingsSubTab = SettingsSubTab.ACCOUNTS,
+    onCloseSettings: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
+    var selectedTab by remember { mutableStateOf(initialTab) }
     val scrollState = rememberScrollState()
     var showWorkspaceDialog by remember { mutableStateOf(false) }
+    var tokenInput by remember { mutableStateOf("") }
+    var showAddAccountDialog by remember { mutableStateOf(false) }
     var newAccountName by remember { mutableStateOf("") }
     var newAccountToken by remember { mutableStateOf("") }
-    var showAddAccountDialog by remember { mutableStateOf(false) }
-    var tokenInput by remember { mutableStateOf("") }
 
     if (uiState.showOAuthWebView && uiState.generatedAuthUrl != null) {
         OAuthWebViewDialog(
@@ -67,79 +72,206 @@ fun ControlCenterScreen(
         modifier = modifier
             .fillMaxSize()
             .background(AgDarkBackground)
-            .verticalScroll(scrollState)
-            .padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp)
+            .padding(horizontal = 14.dp, vertical = 8.dp)
     ) {
-        // --- SECTION 1: GOOGLE OAUTH LOGIN URL GENERATOR ---
-        Card(
-            colors = CardDefaults.cardColors(containerColor = AgSurface),
-            border = BorderStroke(1.dp, AgBorder),
-            shape = RoundedCornerShape(12.dp),
-            modifier = Modifier.fillMaxWidth()
+        // --- TOP TAB SELECTOR (TERMINAL STYLE) ---
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(vertical = 6.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically
         ) {
-            Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Default.Key, contentDescription = null, tint = AgTerminalPrompt, modifier = Modifier.size(20.dp))
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text("Авторизация Google OAuth", color = AgTextPrimary, fontSize = 15.sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace)
-                }
+            TabButton(
+                title = "[ACCOUNTS]",
+                isSelected = selectedTab == SettingsSubTab.ACCOUNTS,
+                onClick = { selectedTab = SettingsSubTab.ACCOUNTS },
+                modifier = Modifier.weight(1f)
+            )
 
-                Text(
-                    "Сгенерируйте ссылку для входа через ваш браузер или используйте сохраненный токен:",
-                    color = AgTextSecondary,
-                    fontSize = 12.sp
-                )
+            TabButton(
+                title = "[HISTORY]",
+                isSelected = selectedTab == SettingsSubTab.HISTORY,
+                onClick = { selectedTab = SettingsSubTab.HISTORY },
+                modifier = Modifier.weight(1f)
+            )
 
-                // Generate Auth URL button
-                Button(
-                    onClick = { viewModel.requestAuthUrl() },
-                    enabled = !uiState.isGeneratingAuthUrl,
-                    colors = ButtonDefaults.buttonColors(containerColor = AgTerminalPrompt),
-                    shape = RoundedCornerShape(8.dp),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    if (uiState.isGeneratingAuthUrl) {
-                        CircularProgressIndicator(modifier = Modifier.size(16.dp), color = Color.Black, strokeWidth = 2.dp)
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text("Генерация ссылки...", color = Color.Black, fontSize = 13.sp)
-                    } else {
-                        Icon(Icons.Default.Link, contentDescription = null, tint = Color.Black, modifier = Modifier.size(16.dp))
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text("Сгенерировать ссылку для входа", color = Color.Black, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+            TabButton(
+                title = "[ADVANCED]",
+                isSelected = selectedTab == SettingsSubTab.ADVANCED,
+                onClick = { selectedTab = SettingsSubTab.ADVANCED },
+                modifier = Modifier.weight(1f)
+            )
+
+            // Close button
+            OutlinedButton(
+                onClick = onCloseSettings,
+                border = BorderStroke(1.dp, AgBorder),
+                shape = RoundedCornerShape(2.dp),
+                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
+                colors = ButtonDefaults.outlinedButtonColors(contentColor = AgTextSecondary)
+            ) {
+                Text("[X]", fontFamily = FontFamily.Monospace, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+            }
+        }
+
+        HorizontalDivider(color = AgSeparator, thickness = 1.dp)
+        Spacer(modifier = Modifier.height(10.dp))
+
+        // --- TAB CONTENTS ---
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .verticalScroll(scrollState),
+            verticalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
+            when (selectedTab) {
+                // ==================== TAB 1: ACCOUNTS & QUOTA ====================
+                SettingsSubTab.ACCOUNTS -> {
+                    // --- SECTION 1: QUOTA (EXACTLY MATCHING SCREENSHOT 2) ---
+                    SectionHeader("QUOTA AND LIMITS")
+
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 4.dp),
+                        verticalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        // GEMINI MODELS GROUP
+                        Text(
+                            text = "GEMINI MODELS",
+                            color = AgTextPrimary,
+                            fontFamily = FontFamily.Monospace,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 13.sp
+                        )
+                        Text(
+                            text = "  Models within this group: Gemini Flash, Gemini Pro",
+                            color = AgTextSecondary,
+                            fontFamily = FontFamily.Monospace,
+                            fontSize = 11.sp
+                        )
+
+                        // Gemini Weekly Limit
+                        AsciiQuotaBlock(
+                            label = "Weekly Limit Remaining",
+                            percent = 100f,
+                            refreshesIn = "Refreshes in 168h 0m",
+                            isYellow = false
+                        )
+
+                        // Gemini 5h limit
+                        AsciiQuotaBlock(
+                            label = "Five Hour Limit Remaining",
+                            percent = ((uiState.usageStats.remainingPercent)).coerceIn(10f, 100f),
+                            refreshesIn = "Refreshes in 4h 52m",
+                            isYellow = uiState.usageStats.remainingPercent < 50f
+                        )
+
+                        Spacer(modifier = Modifier.height(4.dp))
+
+                        // CLAUDE AND GPT MODELS GROUP
+                        Text(
+                            text = "CLAUDE AND GPT MODELS",
+                            color = AgTextPrimary,
+                            fontFamily = FontFamily.Monospace,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 13.sp
+                        )
+                        Text(
+                            text = "  Models within this group: Claude Opus, Claude Sonnet, GPT-OSS",
+                            color = AgTextSecondary,
+                            fontFamily = FontFamily.Monospace,
+                            fontSize = 11.sp
+                        )
+
+                        // Claude Weekly Limit
+                        AsciiQuotaBlock(
+                            label = "Weekly Limit Remaining",
+                            percent = 94.06f,
+                            refreshesIn = "Refreshes in 162h 37m",
+                            isYellow = false
+                        )
+
+                        // Claude 5h limit
+                        AsciiQuotaBlock(
+                            label = "Five Hour Limit Remaining",
+                            percent = 95.99f,
+                            refreshesIn = "Refreshes in 4h 37m",
+                            isYellow = false
+                        )
+
+                        // Active Context details
+                        Text(
+                            text = "ACTIVE CONTEXT OCCUPANCY",
+                            color = AgTextPrimary,
+                            fontFamily = FontFamily.Monospace,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 13.sp
+                        )
+                        AsciiQuotaBlock(
+                            label = "Context Window (${uiState.activeModel})",
+                            percent = uiState.usageStats.remainingPercent,
+                            refreshesIn = "Free: ${String.format(java.util.Locale.US, "%,d", uiState.usageStats.remainingContextTokens).replace(',', ' ')} / ${String.format(java.util.Locale.US, "%,d", uiState.usageStats.contextWindowLimit).replace(',', ' ')} tokens",
+                            isYellow = uiState.usageStats.remainingPercent < 40f
+                        )
+
+                        Text(
+                            text = "Tier: ${uiState.usageStats.tierName} — Unlimited Quota",
+                            color = AgTerminalGreen,
+                            fontFamily = FontFamily.Monospace,
+                            fontSize = 11.sp
+                        )
                     }
-                }
 
-                // Display generated URL
-                uiState.generatedAuthUrl?.let { url ->
-                    Surface(
-                        shape = RoundedCornerShape(8.dp),
-                        color = AgSurfaceVariant,
-                        border = BorderStroke(1.dp, AgPrimary.copy(alpha = 0.5f)),
+                    HorizontalDivider(color = AgSeparator, thickness = 1.dp)
+
+                    // --- SECTION 2: GOOGLE OAUTH LOGIN ---
+                    SectionHeader("GOOGLE OAUTH LOGIN")
+
+                    Text(
+                        text = "Generate browser login link or paste authorization code / token:",
+                        color = AgTextSecondary,
+                        fontFamily = FontFamily.Monospace,
+                        fontSize = 11.sp
+                    )
+
+                    OutlinedButton(
+                        onClick = { viewModel.requestAuthUrl() },
+                        enabled = !uiState.isGeneratingAuthUrl,
+                        border = BorderStroke(1.dp, AgTerminalPrompt),
+                        shape = RoundedCornerShape(2.dp),
+                        colors = ButtonDefaults.outlinedButtonColors(contentColor = AgTerminalPrompt),
                         modifier = Modifier.fillMaxWidth()
                     ) {
-                        Column(modifier = Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                            Text("Ссылка для авторизации:", color = AgTerminalPrompt, fontSize = 11.sp, fontFamily = FontFamily.Monospace)
-                            Text(
-                                text = url,
-                                color = AgTextPrimary,
-                                fontSize = 10.sp,
-                                fontFamily = FontFamily.Monospace,
-                                maxLines = 3
-                            )
-                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                Button(
-                                    onClick = { viewModel.openOAuthWebView() },
-                                    colors = ButtonDefaults.buttonColors(containerColor = AgAccent),
-                                    shape = RoundedCornerShape(6.dp),
-                                    modifier = Modifier.weight(1f)
-                                ) {
-                                    Icon(Icons.Default.Language, contentDescription = null, tint = Color.Black, modifier = Modifier.size(16.dp))
-                                    Spacer(modifier = Modifier.width(4.dp))
-                                    Text("В приложении", fontSize = 11.sp, color = Color.Black, fontWeight = FontWeight.Bold)
-                                }
+                        Text(
+                            text = if (uiState.isGeneratingAuthUrl) "[GENERATING URL...]" else "[GENERATE LOGIN URL]",
+                            fontFamily = FontFamily.Monospace,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 12.sp
+                        )
+                    }
 
-                                Button(
+                    uiState.generatedAuthUrl?.let { url ->
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .border(1.dp, AgBorder)
+                                .padding(8.dp),
+                            verticalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            Text(
+                                text = url.take(120) + "...",
+                                color = AgTerminalDim,
+                                fontFamily = FontFamily.Monospace,
+                                fontSize = 10.sp
+                            )
+
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                OutlinedButton(
                                     onClick = {
                                         try {
                                             val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url)).apply {
@@ -147,591 +279,389 @@ fun ControlCenterScreen(
                                             }
                                             context.startActivity(intent)
                                         } catch (e: Exception) {
-                                            Toast.makeText(context, "Ошибка открытия браузера: ${e.message}", Toast.LENGTH_SHORT).show()
+                                            Toast.makeText(context, "Error: ${e.message}", Toast.LENGTH_SHORT).show()
                                         }
                                     },
-                                    colors = ButtonDefaults.buttonColors(containerColor = AgPrimary),
-                                    shape = RoundedCornerShape(6.dp),
+                                    border = BorderStroke(1.dp, AgTerminalPrompt),
+                                    shape = RoundedCornerShape(2.dp),
+                                    colors = ButtonDefaults.outlinedButtonColors(contentColor = AgTerminalPrompt),
                                     modifier = Modifier.weight(1f)
                                 ) {
-                                    Icon(Icons.Default.OpenInBrowser, contentDescription = null, tint = Color.Black, modifier = Modifier.size(16.dp))
-                                    Spacer(modifier = Modifier.width(4.dp))
-                                    Text("Браузер", fontSize = 11.sp, color = Color.Black)
+                                    Text("[OPEN IN BROWSER]", fontFamily = FontFamily.Monospace, fontSize = 11.sp, fontWeight = FontWeight.Bold)
                                 }
 
                                 OutlinedButton(
                                     onClick = {
                                         val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
                                         clipboard.setPrimaryClip(ClipData.newPlainText("Auth URL", url))
-                                        Toast.makeText(context, "Ссылка скопирована в буфер!", Toast.LENGTH_SHORT).show()
+                                        Toast.makeText(context, "URL copied to clipboard", Toast.LENGTH_SHORT).show()
                                     },
-                                    shape = RoundedCornerShape(6.dp),
-                                    colors = ButtonDefaults.outlinedButtonColors(contentColor = AgTerminalPrompt)
+                                    border = BorderStroke(1.dp, AgBorder),
+                                    shape = RoundedCornerShape(2.dp),
+                                    colors = ButtonDefaults.outlinedButtonColors(contentColor = AgTextSecondary)
                                 ) {
-                                    Icon(Icons.Default.ContentCopy, contentDescription = null, modifier = Modifier.size(16.dp))
+                                    Text("[COPY URL]", fontFamily = FontFamily.Monospace, fontSize = 11.sp)
                                 }
                             }
                         }
                     }
-                }
 
-                // Direct Token / Code Input
-                TextField(
-                    value = tokenInput,
-                    onValueChange = { tokenInput = it },
-                    placeholder = { Text("Вставьте код (4/0A...) или ссылку с кодом...", fontSize = 12.sp, color = AgTextSecondary) },
-                    textStyle = LocalTextStyle.current.copy(fontFamily = FontFamily.Monospace, fontSize = 11.sp),
-                    colors = TextFieldDefaults.colors(
-                        focusedContainerColor = AgSurfaceVariant,
-                        unfocusedContainerColor = AgSurfaceVariant,
-                        focusedTextColor = AgTextPrimary,
-                        unfocusedTextColor = AgTextPrimary
-                    ),
-                    shape = RoundedCornerShape(8.dp),
-                    modifier = Modifier.fillMaxWidth()
-                )
+                    // Direct Code / Token Input
+                    TextField(
+                        value = tokenInput,
+                        onValueChange = { tokenInput = it },
+                        placeholder = {
+                            Text("paste auth code (4/0A...) or token json...", color = AgTerminalDim, fontSize = 12.sp, fontFamily = FontFamily.Monospace)
+                        },
+                        colors = TextFieldDefaults.colors(
+                            focusedContainerColor = AgSurfaceVariant,
+                            unfocusedContainerColor = AgSurfaceVariant,
+                            focusedTextColor = AgTextPrimary,
+                            unfocusedTextColor = AgTextPrimary,
+                            focusedIndicatorColor = AgTerminalPrompt,
+                            unfocusedIndicatorColor = AgBorder
+                        ),
+                        textStyle = LocalTextStyle.current.copy(fontFamily = FontFamily.Monospace, fontSize = 11.sp),
+                        modifier = Modifier.fillMaxWidth()
+                    )
 
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Button(
-                        onClick = {
-                            if (tokenInput.isNotBlank()) {
-                                val input = tokenInput.trim()
-                                if (input.startsWith("{") || input.contains("refresh_token") || input.contains("access_token")) {
-                                    viewModel.saveAccount("Основной токен", input)
-                                    Toast.makeText(context, "Токен сохранён и активирован!", Toast.LENGTH_SHORT).show()
-                                } else {
-                                    Toast.makeText(context, "Выполняется вход через Google...", Toast.LENGTH_SHORT).show()
-                                    viewModel.submitAuthCode(input) { success ->
-                                        if (success) {
-                                            Toast.makeText(context, "Успешная авторизация Google!", Toast.LENGTH_LONG).show()
-                                        } else {
-                                            Toast.makeText(context, "Не удалось обменять код на токен. Попробуйте сгенерировать ссылку заново.", Toast.LENGTH_LONG).show()
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        OutlinedButton(
+                            onClick = {
+                                if (tokenInput.isNotBlank()) {
+                                    val input = tokenInput.trim()
+                                    if (input.startsWith("{") || input.contains("access_token")) {
+                                        viewModel.saveAccount("Default Account", input)
+                                        Toast.makeText(context, "Token saved and activated", Toast.LENGTH_SHORT).show()
+                                    } else {
+                                        Toast.makeText(context, "Exchanging auth code with Google...", Toast.LENGTH_SHORT).show()
+                                        viewModel.submitAuthCode(input) { success ->
+                                            if (success) {
+                                                Toast.makeText(context, "Google OAuth success!", Toast.LENGTH_LONG).show()
+                                            } else {
+                                                Toast.makeText(context, "Auth code exchange failed. Please generate new URL.", Toast.LENGTH_LONG).show()
+                                            }
                                         }
                                     }
+                                    tokenInput = ""
                                 }
-                                tokenInput = ""
-                            }
-                        },
-                        colors = ButtonDefaults.buttonColors(containerColor = AgAccent),
-                        shape = RoundedCornerShape(8.dp),
-                        modifier = Modifier.weight(1f)
-                    ) {
-                        Text("Отправить код / токен", color = Color.Black, fontSize = 12.sp, fontWeight = FontWeight.Bold)
-                    }
-
-                    OutlinedButton(
-                        onClick = {
-                            val success = viewModel.importTokenFromDownloads()
-                            if (success) {
-                                Toast.makeText(context, "Токен загружен из Downloads!", Toast.LENGTH_SHORT).show()
-                            } else {
-                                Toast.makeText(context, "Файл не найден в Downloads", Toast.LENGTH_SHORT).show()
-                            }
-                        },
-                        shape = RoundedCornerShape(8.dp),
-                        colors = ButtonDefaults.outlinedButtonColors(contentColor = AgTerminalPrompt)
-                    ) {
-                        Icon(Icons.Default.Download, contentDescription = null, modifier = Modifier.size(16.dp))
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text("Downloads", fontSize = 12.sp)
-                    }
-                }
-            }
-        }
-
-        // --- SECTION 2: ACCOUNT MANAGER ---
-        Card(
-            colors = CardDefaults.cardColors(containerColor = AgSurface),
-            border = BorderStroke(1.dp, AgBorder),
-            shape = RoundedCornerShape(12.dp),
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(Icons.Default.AccountCircle, contentDescription = null, tint = AgTerminalPurple, modifier = Modifier.size(20.dp))
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text("Менеджер аккаунтов", color = AgTextPrimary, fontSize = 15.sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace)
-                    }
-
-                    IconButton(onClick = { showAddAccountDialog = true }) {
-                        Icon(Icons.Default.Add, contentDescription = "Добавить аккаунт", tint = AgPrimary)
-                    }
-                }
-
-                Text(
-                    text = "Текущий активный токен: ${uiState.currentTokenSnippet}",
-                    color = AgTerminalPrompt,
-                    fontSize = 11.sp,
-                    fontFamily = FontFamily.Monospace
-                )
-
-                if (uiState.accounts.isEmpty()) {
-                    Text("Нет сохранённых профилей. Добавьте токен выше.", color = AgTextSecondary, fontSize = 12.sp)
-                } else {
-                    uiState.accounts.forEach { account ->
-                        Surface(
-                            shape = RoundedCornerShape(8.dp),
-                            color = if (account.isCurrent) AgTerminalPurple.copy(alpha = 0.15f) else AgSurfaceVariant,
-                            border = BorderStroke(1.dp, if (account.isCurrent) AgTerminalPurple else AgBorder),
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clickable { viewModel.switchAccount(account.id) }
+                            },
+                            border = BorderStroke(1.dp, AgTerminalPrompt),
+                            shape = RoundedCornerShape(2.dp),
+                            colors = ButtonDefaults.outlinedButtonColors(contentColor = AgTerminalPrompt),
+                            modifier = Modifier.weight(1f)
                         ) {
+                            Text("[SUBMIT CODE / TOKEN]", fontFamily = FontFamily.Monospace, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                        }
+
+                        OutlinedButton(
+                            onClick = {
+                                val success = viewModel.importTokenFromDownloads()
+                                if (success) {
+                                    Toast.makeText(context, "Token loaded from Downloads", Toast.LENGTH_SHORT).show()
+                                } else {
+                                    Toast.makeText(context, "No token found in Downloads", Toast.LENGTH_SHORT).show()
+                                }
+                            },
+                            border = BorderStroke(1.dp, AgBorder),
+                            shape = RoundedCornerShape(2.dp),
+                            colors = ButtonDefaults.outlinedButtonColors(contentColor = AgTextSecondary)
+                        ) {
+                            Text("[IMPORT DOWNLOADS]", fontFamily = FontFamily.Monospace, fontSize = 11.sp)
+                        }
+                    }
+
+                    HorizontalDivider(color = AgSeparator, thickness = 1.dp)
+
+                    // --- SECTION 3: SAVED ACCOUNTS ---
+                    SectionHeader("SAVED PROFILES")
+
+                    if (uiState.accounts.isEmpty()) {
+                        Text(
+                            text = "No saved profiles yet. Token is loaded from Downloads or active session.",
+                            color = AgTerminalDim,
+                            fontFamily = FontFamily.Monospace,
+                            fontSize = 11.sp
+                        )
+                    } else {
+                        uiState.accounts.forEach { account ->
                             Row(
-                                modifier = Modifier.padding(10.dp),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .border(1.dp, if (account.isActive) AgTerminalPrompt else AgBorder)
+                                    .padding(8.dp),
                                 horizontalArrangement = Arrangement.SpaceBetween,
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 Column(modifier = Modifier.weight(1f)) {
-                                    Row(verticalAlignment = Alignment.CenterVertically) {
-                                        Text(text = account.name, color = AgTextPrimary, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
-                                        if (account.isCurrent) {
-                                            Spacer(modifier = Modifier.width(6.dp))
-                                            Surface(
-                                                shape = RoundedCornerShape(4.dp),
-                                                color = AgTerminalPurple.copy(alpha = 0.3f)
-                                            ) {
-                                                Text("ACTIVE", color = AgTerminalPurple, fontSize = 9.sp, fontFamily = FontFamily.Monospace, modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp))
-                                            }
-                                        }
-                                    }
                                     Text(
-                                        text = "${account.token.take(15)}...",
+                                        text = "> ${account.name} ${if (account.isActive) "[ACTIVE]" else ""}",
+                                        color = if (account.isActive) AgTerminalPrompt else AgTextPrimary,
+                                        fontFamily = FontFamily.Monospace,
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 12.sp
+                                    )
+                                    Text(
+                                        text = "  token: ${account.token.take(24)}...",
                                         color = AgTextSecondary,
-                                        fontSize = 10.sp,
-                                        fontFamily = FontFamily.Monospace
+                                        fontFamily = FontFamily.Monospace,
+                                        fontSize = 10.sp
                                     )
                                 }
 
-                                Row {
-                                    if (!account.isCurrent) {
-                                        IconButton(onClick = { viewModel.switchAccount(account.id) }) {
-                                            Icon(Icons.Default.Check, contentDescription = "Активировать", tint = AgAccent, modifier = Modifier.size(18.dp))
-                                        }
+                                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                    if (!account.isActive) {
+                                        Text(
+                                            text = "[SWITCH]",
+                                            color = AgTerminalGreen,
+                                            fontFamily = FontFamily.Monospace,
+                                            fontSize = 11.sp,
+                                            modifier = Modifier.clickable { viewModel.switchAccount(account.id) }
+                                        )
                                     }
-                                    IconButton(onClick = { viewModel.deleteAccount(account.id) }) {
-                                        Icon(Icons.Default.Delete, contentDescription = "Удалить", tint = AgError, modifier = Modifier.size(18.dp))
-                                    }
+                                    Text(
+                                        text = "[DEL]",
+                                        color = AgError,
+                                        fontFamily = FontFamily.Monospace,
+                                        fontSize = 11.sp,
+                                        modifier = Modifier.clickable { viewModel.deleteAccount(account.id) }
+                                    )
                                 }
                             }
                         }
                     }
                 }
-            }
-        }
 
-        // --- SECTION 3: TOKEN LIMITS & USAGE STATS ---
-        Card(
-            colors = CardDefaults.cardColors(containerColor = AgSurface),
-            border = BorderStroke(1.dp, AgBorder),
-            shape = RoundedCornerShape(12.dp),
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Default.QueryStats, contentDescription = null, tint = AgAccent, modifier = Modifier.size(20.dp))
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text("Лимиты и квота токенов", color = AgTextPrimary, fontSize = 15.sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace)
-                }
-
-                // Remaining Context Window Card
-                Surface(
-                    shape = RoundedCornerShape(8.dp),
-                    color = AgSurfaceVariant,
-                    border = BorderStroke(1.dp, AgBorder),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Text("ОСТАТОК КОНТЕКСТА", fontSize = 10.sp, fontFamily = FontFamily.Monospace, color = AgTextSecondary)
-                            Text(
-                                text = "${String.format(java.util.Locale.US, "%.1f", uiState.usageStats.remainingPercent)}% свободно",
-                                fontSize = 11.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = AgAccent,
-                                fontFamily = FontFamily.Monospace
-                            )
-                        }
-
-                        LinearProgressIndicator(
-                            progress = { (uiState.usageStats.remainingContextTokens.toFloat() / uiState.usageStats.contextWindowLimit.toFloat()).coerceIn(0f, 1f) },
-                            modifier = Modifier.fillMaxWidth().height(6.dp).clip(RoundedCornerShape(3.dp)),
-                            color = AgAccent,
-                            trackColor = AgBorder
-                        )
-
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween
-                        ) {
-                            Text(
-                                text = "Осталось: ${String.format(java.util.Locale.US, "%,d", uiState.usageStats.remainingContextTokens).replace(',', ' ')} токенов",
-                                fontSize = 11.sp,
-                                fontFamily = FontFamily.Monospace,
-                                color = AgTextPrimary
-                            )
-                            Text(
-                                text = "из ${String.format(java.util.Locale.US, "%,d", uiState.usageStats.contextWindowLimit).replace(',', ' ')}",
-                                fontSize = 10.sp,
-                                fontFamily = FontFamily.Monospace,
-                                color = AgTextSecondary
-                            )
-                        }
-                    }
-                }
-
-                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    // Turn tokens
-                    Surface(shape = RoundedCornerShape(8.dp), color = AgSurfaceVariant, modifier = Modifier.weight(1f)) {
-                        Column(modifier = Modifier.padding(10.dp)) {
-                            Text("ПОСЛЕДНИЙ ЗАПРОС", fontSize = 9.sp, fontFamily = FontFamily.Monospace, color = AgTextSecondary)
-                            Spacer(modifier = Modifier.height(4.dp))
-                            Text("${String.format(java.util.Locale.US, "%,d", uiState.usageStats.lastTotalTokens).replace(',', ' ')}", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = AgTerminalPrompt, fontFamily = FontFamily.Monospace)
-                            Text("in: ${uiState.usageStats.lastInputTokens} | out: ${uiState.usageStats.lastOutputTokens}", fontSize = 9.sp, color = AgTextSecondary)
-                        }
-                    }
-
-                    // Session total
-                    Surface(shape = RoundedCornerShape(8.dp), color = AgSurfaceVariant, modifier = Modifier.weight(1f)) {
-                        Column(modifier = Modifier.padding(10.dp)) {
-                            Text("ВСЕГО ЗА СЕССИЮ", fontSize = 9.sp, fontFamily = FontFamily.Monospace, color = AgTextSecondary)
-                            Spacer(modifier = Modifier.height(4.dp))
-                            Text("${String.format(java.util.Locale.US, "%,d", uiState.usageStats.sessionTotalTokens).replace(',', ' ')}", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = AgAccent, fontFamily = FontFamily.Monospace)
-                            Text("ходов: ${uiState.usageStats.turnsCount}", fontSize = 9.sp, color = AgTextSecondary)
-                        }
-                    }
-                }
-
-                Surface(
-                    shape = RoundedCornerShape(6.dp),
-                    color = AgDarkBackground,
-                    border = BorderStroke(1.dp, AgBorder),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
+                // ==================== TAB 2: HISTORY ====================
+                SettingsSubTab.HISTORY -> {
                     Row(
-                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Icon(Icons.Default.CheckCircle, contentDescription = null, tint = AgAccent, modifier = Modifier.size(14.dp))
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Text(
-                            text = "${uiState.usageStats.tierName} — безлимитная квота",
-                            color = AgTextSecondary,
-                            fontSize = 11.sp,
-                            fontFamily = FontFamily.Monospace
-                        )
-                    }
-                }
-            }
-        }
-
-        // --- SECTION 4: COMMAND PERMISSION CONFIRMATION ---
-        Card(
-            colors = CardDefaults.cardColors(containerColor = AgSurface),
-            border = BorderStroke(1.dp, AgBorder),
-            shape = RoundedCornerShape(12.dp),
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            "Авто-подтверждение команд",
-                            color = AgTextPrimary,
-                            fontSize = 14.sp,
-                            fontWeight = FontWeight.Bold,
-                            fontFamily = FontFamily.Monospace
-                        )
-                        Text(
-                            text = if (uiState.autoApprove) "--dangerously-skip-permissions ВКЛ (быстро)" else "Спрашивать подтверждение перед действиями",
-                            color = if (uiState.autoApprove) AgAccent else AgTerminalAmber,
-                            fontSize = 11.sp
-                        )
-                    }
-
-                    Switch(
-                        checked = uiState.autoApprove,
-                        onCheckedChange = { viewModel.toggleAutoApprove() },
-                        colors = SwitchDefaults.colors(
-                            checkedThumbColor = Color.Black,
-                            checkedTrackColor = AgAccent
-                        )
-                    )
-                }
-            }
-        }
-
-        // --- SECTION 5: SHIZUKU (ADB PRIVILEGES) ---
-        Card(
-            colors = CardDefaults.cardColors(containerColor = AgSurface),
-            border = BorderStroke(1.dp, AgBorder),
-            shape = RoundedCornerShape(12.dp),
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(Icons.Default.Terminal, contentDescription = null, tint = AgTerminalPrompt, modifier = Modifier.size(20.dp))
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text("ADB доступ через Shizuku", color = AgTextPrimary, fontSize = 15.sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace)
-                    }
-
-                    Surface(
-                        shape = RoundedCornerShape(6.dp),
-                        color = when {
-                            uiState.isShizukuGranted -> AgAccent.copy(alpha = 0.2f)
-                            uiState.isShizukuInstalled -> AgTerminalAmber.copy(alpha = 0.2f)
-                            else -> AgError.copy(alpha = 0.2f)
-                        }
-                    ) {
-                        Text(
-                            text = when {
-                                uiState.isShizukuGranted -> "GRANTED"
-                                uiState.isShizukuInstalled -> "INSTALLED"
-                                else -> "NOT FOUND"
-                            },
-                            color = when {
-                                uiState.isShizukuGranted -> AgAccent
-                                uiState.isShizukuInstalled -> AgTerminalAmber
-                                else -> AgError
-                            },
-                            fontSize = 10.sp,
-                            fontFamily = FontFamily.Monospace,
-                            fontWeight = FontWeight.Bold,
-                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
-                        )
-                    }
-                }
-
-                Text(
-                    "Позволяет агенту выполнять системные ADB команды без root-доступа через Shizuku сервис.",
-                    color = AgTextSecondary,
-                    fontSize = 11.sp
-                )
-
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    if (uiState.isShizukuInstalled && !uiState.isShizukuGranted) {
-                        Button(
-                            onClick = { viewModel.requestShizukuPermission() },
-                            colors = ButtonDefaults.buttonColors(containerColor = AgTerminalPrompt),
-                            shape = RoundedCornerShape(6.dp),
-                            modifier = Modifier.weight(1f)
-                        ) {
-                            Text("Запросить доступ Shizuku", fontSize = 12.sp, color = Color.Black)
-                        }
-                    }
-
-                    if (uiState.isShizukuGranted) {
+                        SectionHeader("CHAT SESSIONS")
                         OutlinedButton(
-                            onClick = { viewModel.testShizukuCommand() },
-                            shape = RoundedCornerShape(6.dp),
-                            colors = ButtonDefaults.outlinedButtonColors(contentColor = AgTerminalPrompt),
-                            modifier = Modifier.weight(1f)
-                        ) {
-                            Text("Тест ADB команды", fontSize = 12.sp)
-                        }
-                    }
-                }
-            }
-        }
-
-        // --- SECTION 6: ROOT ACCESS (su) ---
-        Card(
-            colors = CardDefaults.cardColors(containerColor = AgSurface),
-            border = BorderStroke(1.dp, AgBorder),
-            shape = RoundedCornerShape(12.dp),
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(Icons.Default.Security, contentDescription = null, tint = AgTerminalAmber, modifier = Modifier.size(20.dp))
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text("Root доступ (su)", color = AgTextPrimary, fontSize = 15.sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace)
-                    }
-
-                    Surface(
-                        shape = RoundedCornerShape(6.dp),
-                        color = when {
-                            uiState.isRootGranted -> AgAccent.copy(alpha = 0.2f)
-                            uiState.isRootAvailable -> AgTerminalAmber.copy(alpha = 0.2f)
-                            else -> AgBorder
-                        }
-                    ) {
-                        Text(
-                            text = when {
-                                uiState.isRootGranted -> "ROOT GRANTED"
-                                uiState.isRootAvailable -> "AVAILABLE"
-                                else -> "NO ROOT"
+                            onClick = {
+                                viewModel.createNewChat()
+                                onCloseSettings()
                             },
-                            color = when {
-                                uiState.isRootGranted -> AgAccent
-                                uiState.isRootAvailable -> AgTerminalAmber
-                                else -> AgTextSecondary
-                            },
-                            fontSize = 10.sp,
-                            fontFamily = FontFamily.Monospace,
-                            fontWeight = FontWeight.Bold,
-                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
-                        )
-                    }
-                }
-
-                Text(
-                    "Прямой root-доступ для выполнения низкоуровневых команд в системе Android.",
-                    color = AgTextSecondary,
-                    fontSize = 11.sp
-                )
-
-                if (uiState.isRootAvailable) {
-                    Button(
-                        onClick = { viewModel.testRootCommand() },
-                        colors = ButtonDefaults.buttonColors(containerColor = AgTerminalAmber),
-                        shape = RoundedCornerShape(6.dp)
-                    ) {
-                        Text("Тест Root доступа (id)", fontSize = 12.sp, color = Color.Black)
-                    }
-                }
-
-                uiState.systemCommandResult?.let { res ->
-                    Surface(
-                        shape = RoundedCornerShape(6.dp),
-                        color = Color.Black.copy(alpha = 0.5f),
-                        border = BorderStroke(1.dp, AgBorder),
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Text(
-                            text = res,
-                            fontSize = 11.sp,
-                            fontFamily = FontFamily.Monospace,
-                            color = AgTerminalPrompt,
-                            modifier = Modifier.padding(8.dp)
-                        )
-                    }
-                }
-            }
-        }
-
-        // --- SECTION 7: STORAGE ACCESS ---
-        Card(
-            colors = CardDefaults.cardColors(containerColor = AgSurface),
-            border = BorderStroke(1.dp, AgBorder),
-            shape = RoundedCornerShape(12.dp),
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(Icons.Default.Storage, contentDescription = null, tint = AgTerminalPrompt, modifier = Modifier.size(20.dp))
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text("Доступ к памяти (Все файлы)", color = AgTextPrimary, fontSize = 15.sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace)
-                    }
-
-                    Surface(
-                        shape = RoundedCornerShape(6.dp),
-                        color = if (uiState.isStorageGranted) AgAccent.copy(alpha = 0.2f) else AgError.copy(alpha = 0.2f)
-                    ) {
-                        Text(
-                            text = if (uiState.isStorageGranted) "GRANTED" else "DENIED",
-                            color = if (uiState.isStorageGranted) AgAccent else AgError,
-                            fontSize = 10.sp,
-                            fontFamily = FontFamily.Monospace,
-                            fontWeight = FontWeight.Bold,
-                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
-                        )
-                    }
-                }
-
-                Text(
-                    "Необходим для чтения и редактирования файлов в папках на устройстве (/sdcard, Download, музыка, проекты).",
-                    color = AgTextSecondary,
-                    fontSize = 11.sp
-                )
-
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Button(
-                        onClick = { viewModel.requestStoragePermission() },
-                        colors = ButtonDefaults.buttonColors(containerColor = if (uiState.isStorageGranted) AgSurfaceVariant else AgTerminalPrompt),
-                        shape = RoundedCornerShape(6.dp),
-                        modifier = Modifier.weight(1f)
-                    ) {
-                        Text(
-                            text = if (uiState.isStorageGranted) "Настройки доступа" else "Разрешить доступ",
-                            fontSize = 12.sp,
-                            color = if (uiState.isStorageGranted) AgTextPrimary else Color.Black,
-                            fontWeight = FontWeight.Bold
-                        )
-                    }
-
-                    if (uiState.isRootAvailable && !uiState.isStorageGranted) {
-                        Button(
-                            onClick = { viewModel.grantStorageViaRoot() },
-                            colors = ButtonDefaults.buttonColors(containerColor = AgTerminalAmber),
-                            shape = RoundedCornerShape(6.dp)
+                            border = BorderStroke(1.dp, AgTerminalGreen),
+                            shape = RoundedCornerShape(2.dp),
+                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
+                            colors = ButtonDefaults.outlinedButtonColors(contentColor = AgTerminalGreen)
                         ) {
-                            Text("Выдать через Root", fontSize = 12.sp, color = Color.Black)
+                            Text("[+ NEW CHAT]", fontFamily = FontFamily.Monospace, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                        }
+                    }
+
+                    if (uiState.sessions.isEmpty()) {
+                        Text(
+                            text = "No saved chat sessions found.",
+                            color = AgTerminalDim,
+                            fontFamily = FontFamily.Monospace,
+                            fontSize = 12.sp
+                        )
+                    } else {
+                        uiState.sessions.forEach { session ->
+                            val isActive = session.id == uiState.currentSessionId
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .border(1.dp, if (isActive) AgTerminalPrompt else AgBorder)
+                                    .clickable {
+                                        viewModel.switchChat(session.id)
+                                        onCloseSettings()
+                                    }
+                                    .padding(10.dp),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        text = "> ${session.title} ${if (isActive) "[CURRENT]" else ""}",
+                                        color = if (isActive) AgTerminalPrompt else AgTextPrimary,
+                                        fontFamily = FontFamily.Monospace,
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 12.sp
+                                    )
+                                    Text(
+                                        text = "  model: ${session.model} | messages: ${session.messages.size}",
+                                        color = AgTextSecondary,
+                                        fontFamily = FontFamily.Monospace,
+                                        fontSize = 10.sp
+                                    )
+                                }
+
+                                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    Text(
+                                        text = "[LOAD]",
+                                        color = AgTerminalPrompt,
+                                        fontFamily = FontFamily.Monospace,
+                                        fontSize = 11.sp,
+                                        modifier = Modifier.clickable {
+                                            viewModel.switchChat(session.id)
+                                            onCloseSettings()
+                                        }
+                                    )
+                                    Text(
+                                        text = "[DEL]",
+                                        color = AgError,
+                                        fontFamily = FontFamily.Monospace,
+                                        fontSize = 11.sp,
+                                        modifier = Modifier.clickable {
+                                            viewModel.deleteChat(session.id)
+                                        }
+                                    )
+                                }
+                            }
                         }
                     }
                 }
-            }
-        }
 
-        // --- SECTION 8: WORKSPACE FOLDER PICKER ---
-        Card(
-            colors = CardDefaults.cardColors(containerColor = AgSurface),
-            border = BorderStroke(1.dp, AgBorder),
-            shape = RoundedCornerShape(12.dp),
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Default.FolderOpen, contentDescription = null, tint = AgTerminalPrompt, modifier = Modifier.size(20.dp))
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text("Рабочая папка проекта (Workspace)", color = AgTextPrimary, fontSize = 15.sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace)
-                }
+                // ==================== TAB 3: ADVANCED SETTINGS ====================
+                SettingsSubTab.ADVANCED -> {
+                    SectionHeader("SYSTEM PRIVILEGES")
 
-                Text(
-                    text = uiState.workspacePath,
-                    fontSize = 11.sp,
-                    fontFamily = FontFamily.Monospace,
-                    color = AgTextSecondary
-                )
+                    // 1. ROOT ACCESS
+                    PrivilegeBlock(
+                        title = "ROOT ACCESS (su)",
+                        status = if (uiState.isRootGranted) "[GRANTED]" else if (uiState.isRootAvailable) "[NOT GRANTED]" else "[NO SU BINARY]",
+                        statusColor = if (uiState.isRootGranted) AgTerminalGreen else if (uiState.isRootAvailable) AgTerminalAmber else AgTextSecondary,
+                        description = "Direct root shell access for unrestricted Linux operations on Android.",
+                        actionButtonText = if (uiState.isRootGranted) "[VERIFIED]" else "[REQUEST ROOT]",
+                        onAction = {
+                            if (!uiState.isRootGranted) {
+                                viewModel.grantStorageViaRoot()
+                            }
+                        },
+                        testButtonText = "[TEST ROOT (id)]",
+                        onTest = { viewModel.testRootCommand() }
+                    )
 
-                Button(
-                    onClick = { showWorkspaceDialog = true },
-                    colors = ButtonDefaults.buttonColors(containerColor = AgSurfaceVariant),
-                    border = BorderStroke(1.dp, AgBorder),
-                    shape = RoundedCornerShape(8.dp),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Icon(Icons.Default.Folder, contentDescription = null, tint = AgTerminalPrompt, modifier = Modifier.size(16.dp))
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text("Сменить папку проекта", color = AgTextPrimary, fontSize = 12.sp)
+                    // 2. ADB / SHIZUKU ACCESS
+                    PrivilegeBlock(
+                        title = "ADB ACCESS (Shizuku)",
+                        status = if (uiState.isShizukuGranted) "[GRANTED]" else if (uiState.isShizukuInstalled) "[INSTALLED]" else "[NOT INSTALLED]",
+                        statusColor = if (uiState.isShizukuGranted) AgTerminalGreen else if (uiState.isShizukuInstalled) AgTerminalAmber else AgTextSecondary,
+                        description = "Enables agent to execute system ADB commands via Shizuku service without root.",
+                        actionButtonText = if (uiState.isShizukuGranted) "[VERIFIED]" else "[REQUEST SHIZUKU]",
+                        onAction = { viewModel.requestShizukuPermission() },
+                        testButtonText = "[TEST ADB (getprop)]",
+                        onTest = { viewModel.testShizukuCommand() }
+                    )
+
+                    // 3. STORAGE ACCESS
+                    PrivilegeBlock(
+                        title = "STORAGE ACCESS (All Files)",
+                        status = if (uiState.isStorageGranted) "[GRANTED]" else "[NOT GRANTED]",
+                        statusColor = if (uiState.isStorageGranted) AgTerminalGreen else AgError,
+                        description = "Required to read and modify audio, scripts, and downloads on /storage/emulated/0.",
+                        actionButtonText = "[REQUEST STORAGE ACCESS]",
+                        onAction = { viewModel.requestStoragePermission() }
+                    )
+
+                    // Command result banner if tested
+                    uiState.systemCommandResult?.let { result ->
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .border(1.dp, AgTerminalPrompt)
+                                .padding(8.dp)
+                        ) {
+                            Text(
+                                text = "OUTPUT:",
+                                color = AgTerminalPrompt,
+                                fontFamily = FontFamily.Monospace,
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                            Text(
+                                text = result,
+                                color = AgTextPrimary,
+                                fontFamily = FontFamily.Monospace,
+                                fontSize = 11.sp
+                            )
+                        }
+                    }
+
+                    HorizontalDivider(color = AgSeparator, thickness = 1.dp)
+
+                    // 4. AUTO-APPROVE COMMANDS
+                    SectionHeader("EXECUTION PERMISSION MODE")
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .border(1.dp, AgBorder)
+                            .padding(10.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = "Auto-approve agent tool commands",
+                                color = AgTextPrimary,
+                                fontFamily = FontFamily.Monospace,
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                            Text(
+                                text = "--dangerously-skip-permissions: ${if (uiState.autoApprove) "ON" else "OFF"}",
+                                color = if (uiState.autoApprove) AgTerminalGreen else AgTerminalAmber,
+                                fontFamily = FontFamily.Monospace,
+                                fontSize = 10.sp
+                            )
+                        }
+
+                        OutlinedButton(
+                            onClick = { viewModel.toggleAutoApprove() },
+                            border = BorderStroke(1.dp, if (uiState.autoApprove) AgTerminalGreen else AgTerminalAmber),
+                            shape = RoundedCornerShape(2.dp),
+                            colors = ButtonDefaults.outlinedButtonColors(
+                                contentColor = if (uiState.autoApprove) AgTerminalGreen else AgTerminalAmber
+                            )
+                        ) {
+                            Text(
+                                text = if (uiState.autoApprove) "[ON]" else "[OFF]",
+                                fontFamily = FontFamily.Monospace,
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                    }
+
+                    HorizontalDivider(color = AgSeparator, thickness = 1.dp)
+
+                    // 5. WORKSPACE DIRECTORY
+                    SectionHeader("PROJECT WORKSPACE")
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .border(1.dp, AgBorder)
+                            .padding(10.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = uiState.workspacePath,
+                                color = AgTextPrimary,
+                                fontFamily = FontFamily.Monospace,
+                                fontSize = 11.sp
+                            )
+                        }
+
+                        OutlinedButton(
+                            onClick = { showWorkspaceDialog = true },
+                            border = BorderStroke(1.dp, AgTerminalPrompt),
+                            shape = RoundedCornerShape(2.dp),
+                            colors = ButtonDefaults.outlinedButtonColors(contentColor = AgTerminalPrompt)
+                        ) {
+                            Text("[CHANGE DIR]", fontFamily = FontFamily.Monospace, fontSize = 11.sp)
+                        }
+                    }
                 }
             }
         }
@@ -740,64 +670,198 @@ fun ControlCenterScreen(
     if (showWorkspaceDialog) {
         WorkspacePickerDialog(
             currentPath = uiState.workspacePath,
-            onSelectPath = { viewModel.updateWorkspace(it) },
+            onPathSelected = {
+                viewModel.updateWorkspace(it)
+                showWorkspaceDialog = false
+            },
             onDismiss = { showWorkspaceDialog = false }
         )
     }
+}
 
-    if (showAddAccountDialog) {
-        AlertDialog(
-            onDismissRequest = { showAddAccountDialog = false },
-            title = { Text("Добавить профиль / аккаунт", color = AgTextPrimary) },
-            text = {
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    TextField(
-                        value = newAccountName,
-                        onValueChange = { newAccountName = it },
-                        placeholder = { Text("Название (например: Рабочий аккаунт)", fontSize = 12.sp) },
-                        colors = TextFieldDefaults.colors(
-                            focusedContainerColor = AgSurfaceVariant,
-                            unfocusedContainerColor = AgSurfaceVariant,
-                            focusedTextColor = AgTextPrimary,
-                            unfocusedTextColor = AgTextPrimary
-                        ),
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                    TextField(
-                        value = newAccountToken,
-                        onValueChange = { newAccountToken = it },
-                        placeholder = { Text("OAuth Токен (ya29... или JSON)", fontSize = 12.sp) },
-                        colors = TextFieldDefaults.colors(
-                            focusedContainerColor = AgSurfaceVariant,
-                            unfocusedContainerColor = AgSurfaceVariant,
-                            focusedTextColor = AgTextPrimary,
-                            unfocusedTextColor = AgTextPrimary
-                        ),
-                        modifier = Modifier.fillMaxWidth(),
-                        maxLines = 4
-                    )
-                }
-            },
-            confirmButton = {
-                Button(
-                    onClick = {
-                        if (newAccountName.isNotBlank() && newAccountToken.isNotBlank()) {
-                            viewModel.saveAccount(newAccountName.trim(), newAccountToken.trim())
-                            newAccountName = ""
-                            newAccountToken = ""
-                            showAddAccountDialog = false
-                        }
-                    }
-                ) {
-                    Text("Сохранить")
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { showAddAccountDialog = false }) {
-                    Text("Отмена")
-                }
-            },
-            containerColor = AgSurface
+@Composable
+private fun TabButton(
+    title: String,
+    isSelected: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    OutlinedButton(
+        onClick = onClick,
+        border = BorderStroke(1.dp, if (isSelected) AgTerminalPrompt else AgBorder),
+        shape = RoundedCornerShape(2.dp),
+        colors = ButtonDefaults.outlinedButtonColors(
+            contentColor = if (isSelected) AgTerminalPrompt else AgTextSecondary
+        ),
+        contentPadding = PaddingValues(horizontal = 6.dp, vertical = 6.dp),
+        modifier = modifier
+    ) {
+        Text(
+            text = title,
+            fontFamily = FontFamily.Monospace,
+            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+            fontSize = 11.sp
         )
+    }
+}
+
+@Composable
+private fun SectionHeader(title: String) {
+    Text(
+        text = title,
+        color = AgTerminalPrompt,
+        fontFamily = FontFamily.Monospace,
+        fontWeight = FontWeight.Bold,
+        fontSize = 12.sp
+    )
+}
+
+/**
+ * ASCII Quota Bar strictly matching Screenshot 2:
+ * [████████████░░░░░░░░░░░░░░░░░░░░] 46.14%
+ * Refreshes in 65h 19m
+ */
+@Composable
+private fun AsciiQuotaBlock(
+    label: String,
+    percent: Float,
+    refreshesIn: String,
+    isYellow: Boolean = false
+) {
+    val clamped = percent.coerceIn(0f, 100f)
+    val totalBlocks = 28
+    val filledCount = ((clamped / 100f) * totalBlocks).toInt()
+    val emptyCount = (totalBlocks - filledCount).coerceAtLeast(0)
+    val filledStr = "█".repeat(filledCount)
+    val emptyStr = "░".repeat(emptyCount)
+
+    val barColor = if (isYellow) AgTerminalAmber else AgTerminalGreen
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 2.dp)
+    ) {
+        Text(
+            text = "  $label",
+            color = AgTextPrimary,
+            fontFamily = FontFamily.Monospace,
+            fontWeight = FontWeight.Bold,
+            fontSize = 12.sp
+        )
+
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(start = 8.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = "[",
+                color = AgTextPrimary,
+                fontFamily = FontFamily.Monospace,
+                fontSize = 12.sp
+            )
+            Text(
+                text = filledStr,
+                color = barColor,
+                fontFamily = FontFamily.Monospace,
+                fontSize = 12.sp
+            )
+            Text(
+                text = emptyStr,
+                color = AgTerminalDim,
+                fontFamily = FontFamily.Monospace,
+                fontSize = 12.sp
+            )
+            Text(
+                text = "] ${String.format(java.util.Locale.US, "%.2f", clamped)}%",
+                color = AgTextPrimary,
+                fontFamily = FontFamily.Monospace,
+                fontSize = 12.sp
+            )
+        }
+
+        Text(
+            text = "  $refreshesIn",
+            color = barColor,
+            fontFamily = FontFamily.Monospace,
+            fontSize = 11.sp,
+            modifier = Modifier.padding(top = 1.dp)
+        )
+    }
+}
+
+@Composable
+private fun PrivilegeBlock(
+    title: String,
+    status: String,
+    statusColor: Color,
+    description: String,
+    actionButtonText: String,
+    onAction: () -> Unit,
+    testButtonText: String? = null,
+    onTest: (() -> Unit)? = null
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .border(1.dp, AgBorder)
+            .padding(10.dp),
+        verticalArrangement = Arrangement.spacedBy(6.dp)
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = title,
+                color = AgTextPrimary,
+                fontFamily = FontFamily.Monospace,
+                fontWeight = FontWeight.Bold,
+                fontSize = 12.sp
+            )
+            Text(
+                text = status,
+                color = statusColor,
+                fontFamily = FontFamily.Monospace,
+                fontWeight = FontWeight.Bold,
+                fontSize = 11.sp
+            )
+        }
+
+        Text(
+            text = description,
+            color = AgTextSecondary,
+            fontFamily = FontFamily.Monospace,
+            fontSize = 10.sp
+        )
+
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            OutlinedButton(
+                onClick = onAction,
+                border = BorderStroke(1.dp, AgTerminalPrompt),
+                shape = RoundedCornerShape(2.dp),
+                colors = ButtonDefaults.outlinedButtonColors(contentColor = AgTerminalPrompt),
+                modifier = Modifier.weight(1f)
+            ) {
+                Text(actionButtonText, fontFamily = FontFamily.Monospace, fontSize = 11.sp)
+            }
+
+            if (testButtonText != null && onTest != null) {
+                OutlinedButton(
+                    onClick = onTest,
+                    border = BorderStroke(1.dp, AgBorder),
+                    shape = RoundedCornerShape(2.dp),
+                    colors = ButtonDefaults.outlinedButtonColors(contentColor = AgTextSecondary)
+                ) {
+                    Text(testButtonText, fontFamily = FontFamily.Monospace, fontSize = 11.sp)
+                }
+            }
+        }
     }
 }

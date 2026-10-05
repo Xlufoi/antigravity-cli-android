@@ -93,7 +93,7 @@ class AgentRepositoryImpl(private val context: Context) : AgentRepository {
                             _messagesFlow.emit(
                                 ChatMessage(
                                     sender = MessageSender.SYSTEM,
-                                    text = "🔗 Требуется авторизация Google:\n$urlText\n\nНажмите кнопку ниже, чтобы открыть в браузере, затем вставьте код авторизации сюда."
+                                    text = "[AUTH REQUIRED] Google OAuth:\n$urlText\n\nClick button below to open in browser, then paste authorization code here."
                                 )
                             )
                         }

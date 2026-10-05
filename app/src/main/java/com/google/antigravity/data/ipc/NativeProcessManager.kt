@@ -411,9 +411,9 @@ class NativeProcessManager(
                             if (textDelta != null) {
                                 send(AgpStreamMessage(type = "chunk", text = textDelta))
                             } else if (stepType == "tool") {
-                                val toolName = stepUpdate?.get("tool_name")?.jsonPrimitive?.content ?: "инструмент"
+                                val toolName = stepUpdate?.get("tool_name")?.jsonPrimitive?.content ?: "tool"
                                 if (state == "ACTIVE") {
-                                    send(AgpStreamMessage(type = "tool_start", text = "🔧 Выполняется: $toolName..."))
+                                    send(AgpStreamMessage(type = "tool_start", text = "▸ [tool: $toolName] running..."))
                                 }
                             }
                         }
@@ -494,12 +494,12 @@ class NativeProcessManager(
         val caCertFile = File(context.filesDir, "cacert.pem")
 
         val fallback = listOf(
-            ModelInfo(id = "gemini-3.8-flash-low", displayName = "Gemini 3.8 Flash (Low ⚡ Instant)", isRecommended = true, effort = "low"),
-            ModelInfo(id = "gemini-3.8-flash-medium", displayName = "Gemini 3.8 Flash (Medium ⚖️ Balance)", effort = "medium"),
-            ModelInfo(id = "gemini-3.8-flash-high", displayName = "Gemini 3.8 Flash (High 🧠 Thinking)", effort = "high"),
+            ModelInfo(id = "gemini-3.8-flash-low", displayName = "Gemini 3.8 Flash (Low - Instant)", isRecommended = true, effort = "low"),
+            ModelInfo(id = "gemini-3.8-flash-medium", displayName = "Gemini 3.8 Flash (Medium - Balance)", effort = "medium"),
+            ModelInfo(id = "gemini-3.8-flash-high", displayName = "Gemini 3.8 Flash (High - Thinking)", effort = "high"),
             ModelInfo(id = "gemini-3.7-flash-low", displayName = "Gemini 3.7 Flash (Low)", effort = "low"),
             ModelInfo(id = "gemini-3.6-flash-low", displayName = "Gemini 3.6 Flash (Low)", effort = "low"),
-            ModelInfo(id = "claude-sonnet-4-6", displayName = "Claude Sonnet 4.6 (Claude 🎭)", effort = "low"),
+            ModelInfo(id = "claude-sonnet-4-6", displayName = "Claude Sonnet 4.6 (Thinking)", effort = "low"),
             ModelInfo(id = "gpt-oss-120b-medium", displayName = "GPT-OSS 120B (Medium)", effort = "medium")
         )
 

@@ -3,34 +3,28 @@ package com.google.antigravity.ui.chat
 import android.widget.Toast
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.google.antigravity.data.ipc.AppLogger
 import com.google.antigravity.ui.chat.components.ChatInputBar
-import com.google.antigravity.ui.chat.components.ChatSessionsDialog
 import com.google.antigravity.ui.chat.components.MessageBubble
 import com.google.antigravity.ui.chat.components.ModelSelectorDialog
 import com.google.antigravity.ui.chat.components.WorkspacePickerDialog
 import com.google.antigravity.ui.control.ControlCenterScreen
+import com.google.antigravity.ui.control.SettingsSubTab
 import com.google.antigravity.ui.theme.*
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -42,13 +36,13 @@ fun ChatScreen(
     val context = LocalContext.current
     val uiState by viewModel.uiState.collectAsState()
     val listState = rememberLazyListState()
-    val logListState = rememberLazyListState()
 
+    var showSettings by remember { mutableStateOf(false) }
+    var initialSettingsTab by remember { mutableStateOf(SettingsSubTab.ACCOUNTS) }
     var showModelDialog by remember { mutableStateOf(false) }
     var showWorkspaceDialog by remember { mutableStateOf(false) }
-    var showSessionsDialog by remember { mutableStateOf(false) }
 
-    // Auto-scroll when messages change or new streaming tokens arrive
+    // Auto-scroll when messages change or streaming updates arrive
     LaunchedEffect(uiState.messages.size) {
         if (uiState.messages.isNotEmpty()) {
             listState.animateScrollToItem(uiState.messages.size - 1)
@@ -69,97 +63,76 @@ fun ChatScreen(
         topBar = {
             TopAppBar(
                 navigationIcon = {
-                    IconButton(onClick = { showSessionsDialog = true }) {
-                        Icon(
-                            Icons.Default.History,
-                            contentDescription = "История диалогов",
-                            tint = AgTerminalPrompt
+                    // Minimalist top-left SETTINGS button requested by user
+                    OutlinedButton(
+                        onClick = {
+                            initialSettingsTab = SettingsSubTab.ACCOUNTS
+                            showSettings = !showSettings
+                        },
+                        border = BorderStroke(1.dp, if (showSettings) AgTerminalGreen else AgTerminalPrompt),
+                        shape = RoundedCornerShape(2.dp),
+                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
+                        colors = ButtonDefaults.outlinedButtonColors(
+                            contentColor = if (showSettings) AgTerminalGreen else AgTerminalPrompt
+                        ),
+                        modifier = Modifier.padding(start = 8.dp)
+                    ) {
+                        Text(
+                            text = if (showSettings) "[CHAT]" else "[SETTINGS]",
+                            fontFamily = FontFamily.Monospace,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 11.sp
                         )
                     }
                 },
                 title = {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.Center,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
                         Text(
-                            text = "agy",
-                            fontSize = 17.sp,
+                            text = "antigravity",
+                            fontSize = 14.sp,
                             fontWeight = FontWeight.Bold,
                             fontFamily = FontFamily.Monospace,
                             color = AgTerminalPrompt
                         )
                         Text(
-                            text = "::mobile",
-                            fontSize = 14.sp,
+                            text = "::cli",
+                            fontSize = 12.sp,
                             fontFamily = FontFamily.Monospace,
                             color = AgTextSecondary
                         )
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Box(
-                            modifier = Modifier
-                                .size(7.dp)
-                                .background(
-                                    if (uiState.isEngineReady) AgAccent else AgTerminalAmber,
-                                    shape = CircleShape
-                                )
+                    }
+                },
+                actions = {
+                    // Quick "+ NEW" chat button in top right
+                    OutlinedButton(
+                        onClick = {
+                            viewModel.createNewChat()
+                            showSettings = false
+                        },
+                        border = BorderStroke(1.dp, AgBorder),
+                        shape = RoundedCornerShape(2.dp),
+                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
+                        colors = ButtonDefaults.outlinedButtonColors(contentColor = AgTextSecondary),
+                        modifier = Modifier.padding(end = 8.dp)
+                    ) {
+                        Text(
+                            text = "[+ NEW]",
+                            fontFamily = FontFamily.Monospace,
+                            fontSize = 11.sp
                         )
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = AgDarkBackground
-                ),
-                actions = {
-                    // Segmented Terminal Tabs in Top Bar
-                    Row(
-                        modifier = Modifier.padding(end = 8.dp),
-                        horizontalArrangement = Arrangement.spacedBy(4.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        // Console Tab
-                        FilterChip(
-                            selected = uiState.currentTab == AppTab.CONSOLE,
-                            onClick = { viewModel.setTab(AppTab.CONSOLE) },
-                            label = { Text(">_ CONSOLE", fontSize = 10.sp, fontFamily = FontFamily.Monospace) },
-                            colors = FilterChipDefaults.filterChipColors(
-                                selectedContainerColor = AgTerminalPrompt.copy(alpha = 0.2f),
-                                selectedLabelColor = AgTerminalPrompt,
-                                containerColor = Color.Transparent,
-                                labelColor = AgTextSecondary
-                            ),
-                            border = BorderStroke(1.dp, if (uiState.currentTab == AppTab.CONSOLE) AgTerminalPrompt else AgBorder)
-                        )
-
-                        // Control Center Tab
-                        FilterChip(
-                            selected = uiState.currentTab == AppTab.CONTROL_CENTER,
-                            onClick = { viewModel.setTab(AppTab.CONTROL_CENTER) },
-                            label = { Text("CONTROL", fontSize = 10.sp, fontFamily = FontFamily.Monospace) },
-                            colors = FilterChipDefaults.filterChipColors(
-                                selectedContainerColor = AgTerminalPurple.copy(alpha = 0.2f),
-                                selectedLabelColor = AgTerminalPurple,
-                                containerColor = Color.Transparent,
-                                labelColor = AgTextSecondary
-                            ),
-                            border = BorderStroke(1.dp, if (uiState.currentTab == AppTab.CONTROL_CENTER) AgTerminalPurple else AgBorder)
-                        )
-
-                        // Logs Tab
-                        FilterChip(
-                            selected = uiState.currentTab == AppTab.LOGS,
-                            onClick = { viewModel.setTab(AppTab.LOGS) },
-                            label = { Text("LOGS", fontSize = 10.sp, fontFamily = FontFamily.Monospace) },
-                            colors = FilterChipDefaults.filterChipColors(
-                                selectedContainerColor = AgAccent.copy(alpha = 0.2f),
-                                selectedLabelColor = AgAccent,
-                                containerColor = Color.Transparent,
-                                labelColor = AgTextSecondary
-                            ),
-                            border = BorderStroke(1.dp, if (uiState.currentTab == AppTab.LOGS) AgAccent else AgBorder)
-                        )
-                    }
-                }
+                )
             )
         },
         bottomBar = {
-            if (uiState.currentTab == AppTab.CONSOLE) {
+            if (!showSettings) {
                 ChatInputBar(
                     isStreaming = uiState.isStreaming,
                     activeModel = uiState.activeModel,
@@ -172,7 +145,14 @@ fun ChatScreen(
                     onModelClick = { showModelDialog = true },
                     onWorkspaceClick = { showWorkspaceDialog = true },
                     onToggleAutoApprove = { viewModel.toggleAutoApprove() },
-                    onOpenControlCenter = { viewModel.setTab(AppTab.CONTROL_CENTER) }
+                    onAdbClick = {
+                        initialSettingsTab = SettingsSubTab.ADVANCED
+                        showSettings = true
+                    },
+                    onRootClick = {
+                        initialSettingsTab = SettingsSubTab.ADVANCED
+                        showSettings = true
+                    }
                 )
             }
         },
@@ -183,162 +163,74 @@ fun ChatScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(innerPadding)
+                .background(AgDarkBackground)
         ) {
-            when (uiState.currentTab) {
-                AppTab.CONSOLE -> {
-                    LazyColumn(
-                        state = listState,
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .padding(horizontal = 12.dp),
-                        verticalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        item {
-                            // Terminal welcome banner
-                            Surface(
-                                shape = RoundedCornerShape(8.dp),
-                                color = AgSurfaceVariant.copy(alpha = 0.6f),
-                                border = BorderStroke(1.dp, AgBorder),
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(vertical = 8.dp)
-                            ) {
-                                val activeSession = uiState.sessions.find { it.id == uiState.currentSessionId }
-                                val sessionTitle = activeSession?.title ?: "Новый диалог"
+            if (showSettings) {
+                // Settings view with Accounts, History, and Advanced tabs
+                ControlCenterScreen(
+                    viewModel = viewModel,
+                    uiState = uiState,
+                    initialTab = initialSettingsTab,
+                    onCloseSettings = { showSettings = false },
+                    modifier = Modifier.fillMaxSize()
+                )
+            } else {
+                // Pure Terminal Stream matching Screenshot 1
+                LazyColumn(
+                    state = listState,
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(horizontal = 14.dp),
+                    verticalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    item {
+                        // Terminal Banner at start of log
+                        val activeSession = uiState.sessions.find { it.id == uiState.currentSessionId }
+                        val sessionTitle = activeSession?.title ?: "New Session"
 
-                                Column(modifier = Modifier.padding(10.dp)) {
-                                    Row(
-                                        modifier = Modifier.fillMaxWidth(),
-                                        horizontalArrangement = Arrangement.SpaceBetween,
-                                        verticalAlignment = Alignment.CenterVertically
-                                    ) {
-                                        Text(
-                                            text = "Google Antigravity CLI • $sessionTitle",
-                                            fontFamily = FontFamily.Monospace,
-                                            fontWeight = FontWeight.Bold,
-                                            fontSize = 11.sp,
-                                            color = AgTerminalPrompt,
-                                            maxLines = 1,
-                                            modifier = Modifier.weight(1f)
-                                        )
-                                        Text(
-                                            text = "[История]",
-                                            color = AgAccent,
-                                            fontSize = 10.sp,
-                                            fontFamily = FontFamily.Monospace,
-                                            fontWeight = FontWeight.Bold,
-                                            modifier = Modifier.clickable { showSessionsDialog = true }
-                                        )
-                                    }
-                                    Spacer(modifier = Modifier.height(2.dp))
-                                    Text(
-                                        text = "Папка: ${uiState.workspacePath}",
-                                        fontFamily = FontFamily.Monospace,
-                                        fontSize = 10.sp,
-                                        color = AgTextSecondary
-                                    )
-                                    Text(
-                                        text = "Модель: ${uiState.activeModel} • auto-approve: ${if (uiState.autoApprove) "ON" else "OFF"}",
-                                        fontFamily = FontFamily.Monospace,
-                                        fontSize = 10.sp,
-                                        color = AgTerminalPurple
-                                    )
-                                    Text(
-                                        text = "Подсказка: команды Linux/Termux можно запускать через '! <команда>'",
-                                        fontFamily = FontFamily.Monospace,
-                                        fontSize = 9.sp,
-                                        color = AgTerminalDim
-                                    )
-                                }
-                            }
-                        }
-
-                        items(uiState.messages, key = { it.id }) { message ->
-                            MessageBubble(message = message)
-                        }
-
-                        item {
-                            Spacer(modifier = Modifier.height(10.dp))
-                        }
-                    }
-                }
-
-                AppTab.CONTROL_CENTER -> {
-                    ControlCenterScreen(
-                        viewModel = viewModel,
-                        uiState = uiState
-                    )
-                }
-
-                AppTab.LOGS -> {
-                    val logs by AppLogger.liveLogs.collectAsState()
-
-                    LaunchedEffect(logs.size) {
-                        if (logs.isNotEmpty()) {
-                            logListState.scrollToItem(logs.size - 1)
-                        }
-                    }
-
-                    Column(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .padding(12.dp)
-                    ) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
+                        Column(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
                             Text(
-                                "Системный лог ядра (Live)",
-                                color = AgTextPrimary,
+                                text = "Google Antigravity Mobile CLI [v3.0]",
                                 fontFamily = FontFamily.Monospace,
-                                fontSize = 13.sp,
-                                fontWeight = FontWeight.Bold
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 12.sp,
+                                color = AgTerminalPrompt
                             )
-                            Button(
-                                onClick = {
-                                    val path = AppLogger.exportToDownloads(context)
-                                    Toast.makeText(context, "Экспортировано в:\n$path", Toast.LENGTH_LONG).show()
-                                },
-                                colors = ButtonDefaults.buttonColors(containerColor = AgPrimary),
-                                shape = RoundedCornerShape(6.dp)
-                            ) {
-                                Icon(Icons.Default.Download, contentDescription = null, modifier = Modifier.size(16.dp), tint = Color.Black)
-                                Spacer(modifier = Modifier.width(6.dp))
-                                Text("Экспорт в Downloads", fontSize = 11.sp, color = Color.Black)
-                            }
+                            Text(
+                                text = "Session: $sessionTitle",
+                                fontFamily = FontFamily.Monospace,
+                                fontSize = 11.sp,
+                                color = AgTextSecondary
+                            )
+                            Text(
+                                text = "Model: ${uiState.activeModel} | auto-approve: ${if (uiState.autoApprove) "ON" else "OFF"}",
+                                fontFamily = FontFamily.Monospace,
+                                fontSize = 11.sp,
+                                color = AgTextSecondary
+                            )
+                            Text(
+                                text = "Dir: ${uiState.workspacePath}",
+                                fontFamily = FontFamily.Monospace,
+                                fontSize = 10.sp,
+                                color = AgTerminalDim
+                            )
+                            Spacer(modifier = Modifier.height(4.dp))
+                            HorizontalDivider(color = AgSeparator, thickness = 1.dp)
                         }
+                    }
 
-                        Spacer(modifier = Modifier.height(8.dp))
+                    items(uiState.messages, key = { it.id }) { message ->
+                        MessageBubble(message = message)
+                    }
 
-                        Box(
-                            modifier = Modifier
-                                .fillMaxSize()
-                                .clip(RoundedCornerShape(8.dp))
-                                .background(Color.Black.copy(alpha = 0.8f))
-                                .border(1.dp, AgBorder, RoundedCornerShape(8.dp))
-                                .padding(8.dp)
-                        ) {
-                            LazyColumn(state = logListState) {
-                                items(logs) { line ->
-                                    Text(
-                                        text = line,
-                                        color = if (line.contains("ERROR")) AgError else AgTextSecondary,
-                                        fontSize = 10.sp,
-                                        fontFamily = FontFamily.Monospace,
-                                        lineHeight = 13.sp
-                                    )
-                                }
-                            }
-                        }
+                    item {
+                        Spacer(modifier = Modifier.height(16.dp))
                     }
                 }
             }
         }
     }
 
-    // Dynamic Server Model Selector Dialog
     if (showModelDialog) {
         ModelSelectorDialog(
             currentModel = uiState.activeModel,
@@ -350,24 +242,14 @@ fun ChatScreen(
         )
     }
 
-    // Workspace Folder Picker Dialog
     if (showWorkspaceDialog) {
         WorkspacePickerDialog(
             currentPath = uiState.workspacePath,
-            onSelectPath = { viewModel.updateWorkspace(it) },
+            onSelectPath = {
+                viewModel.updateWorkspace(it)
+                showWorkspaceDialog = false
+            },
             onDismiss = { showWorkspaceDialog = false }
-        )
-    }
-
-    // Chat Sessions & History Dialog
-    if (showSessionsDialog) {
-        ChatSessionsDialog(
-            sessions = uiState.sessions,
-            currentSessionId = uiState.currentSessionId,
-            onSelectSession = { viewModel.switchChat(it) },
-            onNewChat = { viewModel.createNewChat() },
-            onDeleteSession = { viewModel.deleteChat(it) },
-            onDismiss = { showSessionsDialog = false }
         )
     }
 }
