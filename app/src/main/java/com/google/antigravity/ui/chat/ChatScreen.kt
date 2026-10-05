@@ -1,26 +1,31 @@
 package com.google.antigravity.ui.chat
 
+import android.widget.Toast
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.BugReport
+import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Key
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.google.antigravity.data.ipc.AppLogger
 import com.google.antigravity.ui.chat.components.ChatInputBar
 import com.google.antigravity.ui.chat.components.MessageBubble
-import com.google.antigravity.ui.theme.AgAccent
-import com.google.antigravity.ui.theme.AgDarkBackground
-import com.google.antigravity.ui.theme.AgSurfaceVariant
-import com.google.antigravity.ui.theme.AgTextPrimary
-import com.google.antigravity.ui.theme.AgTextSecondary
+import com.google.antigravity.ui.theme.*
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -29,10 +34,12 @@ fun ChatScreen(
     viewModel: ChatViewModel,
     modifier: Modifier = Modifier
 ) {
+    val context = LocalContext.current
     val uiState by viewModel.uiState.collectAsState()
     val listState = rememberLazyListState()
     val coroutineScope = rememberCoroutineScope()
     var showAuthDialog by remember { mutableStateOf(false) }
+    var showLogsDialog by remember { mutableStateOf(false) }
     var tokenInput by remember { mutableStateOf("") }
 
     LaunchedEffect(uiState.messages.size) {
@@ -60,7 +67,7 @@ fun ChatScreen(
                             )
                             Spacer(modifier = Modifier.width(6.dp))
                             Text(
-                                text = if (uiState.isEngineReady) "Engine Ready • ${uiState.activeModel}" else "Initializing Engine...",
+                                text = if (uiState.isEngineReady) "Engine Ready • ${uiState.activeModel}" else "Engine Initializing...",
                                 fontSize = 11.sp,
                                 color = AgTextSecondary
                             )
@@ -71,6 +78,11 @@ fun ChatScreen(
                     containerColor = AgDarkBackground
                 ),
                 actions = {
+                    // Logs Button
+                    IconButton(onClick = { showLogsDialog = true }) {
+                        Icon(Icons.Default.BugReport, contentDescription = "Logs", tint = AgTextSecondary)
+                    }
+                    // OAuth Key Button
                     IconButton(onClick = { showAuthDialog = true }) {
                         Icon(Icons.Default.Key, contentDescription = "OAuth Token", tint = AgTextSecondary)
                     }
@@ -99,6 +111,68 @@ fun ChatScreen(
                 MessageBubble(message = message)
             }
         }
+    }
+
+    // Live Logs Dialog
+    if (showLogsDialog) {
+        val logs by AppLogger.liveLogs.collectAsState()
+        val logListState = rememberLazyListState()
+
+        AlertDialog(
+            onDismissRequest = { showLogsDialog = false },
+            title = {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text("Системный лог", color = AgTextPrimary)
+                    IconButton(onClick = {
+                        val path = AppLogger.exportToDownloads(context)
+                        Toast.makeText(context, "Лог сохранён в Downloads:\n$path", Toast.LENGTH_LONG).show()
+                    }) {
+                        Icon(Icons.Default.Download, contentDescription = "Export Log", tint = AgPrimary)
+                    }
+                }
+            },
+            text = {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(350.dp)
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(Color.Black.copy(alpha = 0.6f))
+                        .border(1.dp, AgBorder, RoundedCornerShape(8.dp))
+                        .padding(8.dp)
+                ) {
+                    LazyColumn(state = logListState) {
+                        items(logs) { line ->
+                            Text(
+                                text = line,
+                                color = if (line.contains("ERROR")) AgError else AgTextSecondary,
+                                fontSize = 10.sp,
+                                fontFamily = FontFamily.Monospace,
+                                lineHeight = 13.sp
+                            )
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                Button(onClick = {
+                    val path = AppLogger.exportToDownloads(context)
+                    Toast.makeText(context, "Лог экспортирован в:\n$path", Toast.LENGTH_LONG).show()
+                }) {
+                    Text("Экспорт в Downloads")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showLogsDialog = false }) {
+                    Text("Закрыть")
+                }
+            },
+            containerColor = AgSurfaceVariant
+        )
     }
 
     if (showAuthDialog) {

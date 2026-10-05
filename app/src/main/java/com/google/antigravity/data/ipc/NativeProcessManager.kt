@@ -1,7 +1,6 @@
 package com.google.antigravity.data.ipc
 
 import android.content.Context
-import android.util.Log
 import com.google.antigravity.data.model.AgpStreamMessage
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
@@ -32,16 +31,17 @@ class NativeProcessManager(
     suspend fun startEngine(): Boolean = withContext(Dispatchers.IO) {
         try {
             if (process != null && process?.isAlive == true) {
+                AppLogger.log(TAG, "Process already alive")
                 return@withContext true
             }
 
-            val engineDir = EngineInstaller.ensureInstalled(context)
+            val engineDir = File(context.filesDir, "engine")
             val ldLoader = File(engineDir, "ld-linux-aarch64.so.1")
             val agyBinary = File(engineDir, "agy.va39")
             val libDir = File(engineDir, "lib")
 
             if (!agyBinary.exists() || !ldLoader.exists()) {
-                Log.e(TAG, "Engine files missing in $engineDir")
+                AppLogger.log(TAG, "Engine files missing! agyBinary=${agyBinary.exists()}, ldLoader=${ldLoader.exists()}")
                 return@withContext false
             }
 
@@ -52,7 +52,7 @@ class NativeProcessManager(
             val geminiDir = File(context.filesDir, ".gemini/antigravity-cli")
             geminiDir.mkdirs()
 
-            // Automatically provision initial OAuth token if available
+            // Provision initial OAuth token if available
             val tokenFile = File(geminiDir, "antigravity-oauth-token")
             if (!oauthToken.isNullOrBlank()) {
                 val tokenJson = if (oauthToken.trim().startsWith("{")) {
@@ -61,6 +61,7 @@ class NativeProcessManager(
                     """{"token":{"access_token":"${oauthToken.trim()}"}}"""
                 }
                 tokenFile.writeText(tokenJson)
+                AppLogger.log(TAG, "Saved oauth token to ${tokenFile.absolutePath}")
             }
 
             val command = listOf(
@@ -74,6 +75,8 @@ class NativeProcessManager(
                 "--add-dir", workspaceDir.absolutePath
             )
 
+            AppLogger.log(TAG, "Starting process: ${command.joinToString(" ")}")
+
             val pb = ProcessBuilder(command)
             pb.directory(workspaceDir)
             pb.redirectErrorStream(false)
@@ -86,10 +89,10 @@ class NativeProcessManager(
             val proc = pb.start()
             process = proc
             writer = BufferedWriter(OutputStreamWriter(proc.outputStream))
-            Log.i(TAG, "Antigravity engine process started successfully (PID: $proc)")
+            AppLogger.log(TAG, "Antigravity engine process started! (Process: $proc)")
             true
         } catch (e: Exception) {
-            Log.e(TAG, "Error starting native engine", e)
+            AppLogger.log(TAG, "Error starting native engine: ${e.message}\n${e.stackTraceToString()}")
             false
         }
     }
@@ -101,9 +104,10 @@ class NativeProcessManager(
             val payload = "{\"type\":\"user_prompt\",\"prompt\":\"$escaped\"}\n"
             w.write(payload)
             w.flush()
+            AppLogger.log(TAG, "Sent user prompt to stdin: $prompt")
             true
         } catch (e: Exception) {
-            Log.e(TAG, "Error writing to process stdin", e)
+            AppLogger.log(TAG, "Error writing to stdin: ${e.message}")
             false
         }
     }
@@ -111,16 +115,13 @@ class NativeProcessManager(
     fun observeEvents(): Flow<AgpStreamMessage> = flow {
         val proc = process ?: return@flow
         val reader = BufferedReader(InputStreamReader(proc.inputStream))
-        val errReader = BufferedReader(InputStreamReader(proc.errorStream))
-
-        // Monitor stdout
         try {
             var line: String?
             while (proc.isAlive) {
                 line = reader.readLine() ?: break
                 if (line.isNotBlank()) {
-                    // Check if stdout contains an auth URL prompt
-                    if (line.contains("https://accounts.google.com") || line.contains("https://") && line.contains("oauth")) {
+                    AppLogger.log(TAG, "STDOUT: $line")
+                    if (line.contains("https://accounts.google.com") || (line.contains("https://") && line.contains("oauth"))) {
                         emit(AgpStreamMessage(type = "auth_url", text = line))
                     } else {
                         try {
@@ -133,7 +134,7 @@ class NativeProcessManager(
                 }
             }
         } catch (e: Exception) {
-            Log.e(TAG, "Error reading from process stdout", e)
+            AppLogger.log(TAG, "Stdout reader error: ${e.message}")
         }
     }.flowOn(Dispatchers.IO)
 
@@ -145,11 +146,12 @@ class NativeProcessManager(
             while (proc.isAlive) {
                 errLine = errReader.readLine() ?: break
                 if (errLine.isNotBlank()) {
+                    AppLogger.log(TAG, "STDERR: $errLine")
                     emit(errLine)
                 }
             }
         } catch (e: Exception) {
-            Log.e(TAG, "Error reading stderr", e)
+            AppLogger.log(TAG, "Stderr reader error: ${e.message}")
         }
     }.flowOn(Dispatchers.IO)
 
@@ -159,9 +161,9 @@ class NativeProcessManager(
             process?.destroy()
             process = null
             writer = null
-            Log.i(TAG, "Engine stopped")
+            AppLogger.log(TAG, "Engine stopped")
         } catch (e: Exception) {
-            Log.e(TAG, "Error stopping engine", e)
+            AppLogger.log(TAG, "Error stopping engine: ${e.message}")
         }
     }
 }
