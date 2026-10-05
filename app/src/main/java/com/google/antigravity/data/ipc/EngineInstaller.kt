@@ -227,6 +227,7 @@ object EngineInstaller {
             }
 
             // 5. Setup .bashrc for bash commands (bridge to Termux tools if Root is available)
+            val d = '$'
             val bashrcFile = File(context.filesDir, ".bashrc")
             bashrcFile.writeText(
                 """
@@ -236,16 +237,35 @@ object EngineInstaller {
                 
                 # Non-intrusive bridge: if Termux is installed and Root is available, expose tools without modifying Termux
                 if [ -x /system/bin/su ] && [ -d /data/data/com.termux/files/usr/bin ]; then
-                    python3() { /system/bin/su -c "export PATH=/data/data/com.termux/files/usr/bin:\$PATH; export LD_LIBRARY_PATH=/data/data/com.termux/files/usr/lib; export HOME=/data/data/com.termux/files/home; python3 \"\$@\""; }
-                    python() { /system/bin/su -c "export PATH=/data/data/com.termux/files/usr/bin:\$PATH; export LD_LIBRARY_PATH=/data/data/com.termux/files/usr/lib; export HOME=/data/data/com.termux/files/home; python \"\$@\""; }
-                    ffmpeg() { /system/bin/su -c "export PATH=/data/data/com.termux/files/usr/bin:\$PATH; export LD_LIBRARY_PATH=/data/data/com.termux/files/usr/lib; export HOME=/data/data/com.termux/files/home; ffmpeg \"\$@\""; }
-                    pip() { /system/bin/su -c "export PATH=/data/data/com.termux/files/usr/bin:\$PATH; export LD_LIBRARY_PATH=/data/data/com.termux/files/usr/lib; export HOME=/data/data/com.termux/files/home; pip \"\$@\""; }
-                    pip3() { /system/bin/su -c "export PATH=/data/data/com.termux/files/usr/bin:\$PATH; export LD_LIBRARY_PATH=/data/data/com.termux/files/usr/lib; export HOME=/data/data/com.termux/files/home; pip3 \"\$@\""; }
+                    python3() { /system/bin/su -c "export PATH=/data/data/com.termux/files/usr/bin:${d}PATH; export LD_LIBRARY_PATH=/data/data/com.termux/files/usr/lib; export HOME=/data/data/com.termux/files/home; python3 \"${d}@\""; }
+                    python() { /system/bin/su -c "export PATH=/data/data/com.termux/files/usr/bin:${d}PATH; export LD_LIBRARY_PATH=/data/data/com.termux/files/usr/lib; export HOME=/data/data/com.termux/files/home; python \"${d}@\""; }
+                    ffmpeg() { /system/bin/su -c "export PATH=/data/data/com.termux/files/usr/bin:${d}PATH; export LD_LIBRARY_PATH=/data/data/com.termux/files/usr/lib; export HOME=/data/data/com.termux/files/home; ffmpeg \"${d}@\""; }
+                    pip() { /system/bin/su -c "export PATH=/data/data/com.termux/files/usr/bin:${d}PATH; export LD_LIBRARY_PATH=/data/data/com.termux/files/usr/lib; export HOME=/data/data/com.termux/files/home; pip \"${d}@\""; }
+                    pip3() { /system/bin/su -c "export PATH=/data/data/com.termux/files/usr/bin:${d}PATH; export LD_LIBRARY_PATH=/data/data/com.termux/files/usr/lib; export HOME=/data/data/com.termux/files/home; pip3 \"${d}@\""; }
                 fi
                 """.trimIndent()
             )
 
-            // 6. Ensure workspace directory exists
+            // 6. Create executable wrapper scripts for bridged tools
+            val bridgedTools = listOf("python3", "python", "ffmpeg", "pip", "pip3")
+            for (tool in bridgedTools) {
+                val toolFile = File(usrBin, tool)
+                if (!toolFile.exists()) {
+                    toolFile.writeText(
+                        """
+                        #!/system/bin/sh
+                        if [ -x /system/bin/su ] && [ -d /data/data/com.termux/files/usr/bin ]; then
+                            exec /system/bin/su -c "export PATH=/data/data/com.termux/files/usr/bin:${d}PATH; export LD_LIBRARY_PATH=/data/data/com.termux/files/usr/lib; export HOME=/data/data/com.termux/files/home; exec $tool \"${d}@\""
+                        fi
+                        echo "$tool: not found (requires root bridge to Termux)" >&2
+                        exit 127
+                        """.trimIndent()
+                    )
+                    toolFile.setExecutable(true, false)
+                }
+            }
+
+            // 7. Ensure workspace directory exists
             File(context.filesDir, "workspace").mkdirs()
             AppLogger.log(TAG, "Sandbox Linux environment configured successfully with nativeLibDir: ${nativeLibDir.absolutePath}")
         } catch (e: Exception) {
