@@ -240,7 +240,7 @@ fun ChatScreen(
     if (showAccountDialog) {
         AccountSelectorDialog(
             activeEmail = uiState.activeAccountEmail,
-            accounts = uiState.accountProfiles,
+            accounts = uiState.accounts,
             onSelectAccount = { accountId ->
                 viewModel.switchAccount(accountId)
                 showAccountDialog = false

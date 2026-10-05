@@ -878,8 +878,8 @@ fun ControlCenterScreen(
                             }
                         }
                     }
-                    SettingsSubTab.MENU -> {}
                 }
+                SettingsSubTab.MENU -> {}
             }
         }
     }
