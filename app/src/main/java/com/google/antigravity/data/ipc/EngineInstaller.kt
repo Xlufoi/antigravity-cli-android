@@ -8,7 +8,7 @@ import java.io.FileOutputStream
 
 object EngineInstaller {
     private const val TAG = "EngineInstaller"
-    private const val ENGINE_VERSION = "2.1"
+    private const val ENGINE_VERSION = "2.2"
 
     fun isEngineReady(context: Context): Boolean {
         val engineDir = File(context.filesDir, "engine")

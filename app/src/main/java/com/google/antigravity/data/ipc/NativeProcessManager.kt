@@ -99,7 +99,7 @@ class NativeProcessManager(
                 AppLogger.log(TAG, "Initialized default settings.json")
             }
 
-            // 4. Create resolv.conf for glibc DNS resolution
+            // 4. Create resolv.conf, hosts, and nsswitch.conf for glibc networking & localhost resolution
             val resolvFile = File(context.filesDir, "resolv.conf")
             resolvFile.writeText(
                 """
@@ -111,6 +111,28 @@ class NativeProcessManager(
             )
             resolvFile.setReadable(true, false)
             AppLogger.log(TAG, "Created resolv.conf (${resolvFile.length()} bytes)")
+
+            val hostsFile = File(context.filesDir, "hosts")
+            hostsFile.writeText(
+                """
+                127.0.0.1 localhost localhost.localdomain
+                ::1 localhost ip6-localhost ip6-loopback
+                """.trimIndent()
+            )
+            hostsFile.setReadable(true, false)
+            AppLogger.log(TAG, "Created hosts (${hostsFile.length()} bytes)")
+
+            val nsswitchFile = File(context.filesDir, "nsswitch.conf")
+            nsswitchFile.writeText(
+                """
+                hosts: files dns
+                networks: files
+                protocols: files
+                services: files
+                """.trimIndent()
+            )
+            nsswitchFile.setReadable(true, false)
+            AppLogger.log(TAG, "Created nsswitch.conf (${nsswitchFile.length()} bytes)")
 
             // 5. Extract CA certificates for HTTPS/SSL
             val caCertFile = File(context.filesDir, "cacert.pem")
