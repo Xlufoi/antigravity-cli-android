@@ -2,6 +2,7 @@ package com.google.antigravity.data.repository
 
 import android.content.Context
 import com.google.antigravity.data.ipc.AccountManager
+import com.google.antigravity.data.ipc.ChatHistoryManager
 import com.google.antigravity.data.ipc.NativeProcessManager
 import com.google.antigravity.domain.model.ChatMessage
 import com.google.antigravity.domain.model.MessageSender
@@ -198,7 +199,7 @@ class AgentRepositoryImpl(private val context: Context) : AgentRepository {
         return processManager?.usageStats ?: MutableStateFlow(UsageStats()).asStateFlow()
     }
 
-    override val chatHistoryManager by lazy { ChatHistoryManager(context) }
+    override val chatHistoryManager: ChatHistoryManager by lazy { ChatHistoryManager(context) }
 
     override fun submitAuthCode(code: String): Boolean {
         return processManager?.submitAuthCode(code) ?: false
