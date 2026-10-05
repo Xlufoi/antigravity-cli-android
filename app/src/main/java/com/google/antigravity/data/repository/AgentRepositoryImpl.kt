@@ -1,5 +1,6 @@
 package com.google.antigravity.data.repository
 
+import android.content.Context
 import com.google.antigravity.data.ipc.NativeProcessManager
 import com.google.antigravity.domain.model.ChatMessage
 import com.google.antigravity.domain.model.MessageSender
@@ -13,18 +14,21 @@ import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.launch
 
-class AgentRepositoryImpl : AgentRepository {
+class AgentRepositoryImpl(private val context: Context) : AgentRepository {
 
     private var processManager: NativeProcessManager? = null
     private val _messagesFlow = MutableSharedFlow<ChatMessage>(replay = 50)
     private val scope = CoroutineScope(Dispatchers.IO)
 
     override suspend fun startSession(
-        binaryPath: String,
-        workspacePath: String,
-        model: String
+        model: String,
+        oauthToken: String?
     ): Boolean {
-        val manager = NativeProcessManager(binaryPath, workspacePath, model)
+        val manager = NativeProcessManager(
+            context = context,
+            model = model,
+            oauthToken = oauthToken
+        )
         val started = manager.startEngine()
         if (started) {
             processManager = manager

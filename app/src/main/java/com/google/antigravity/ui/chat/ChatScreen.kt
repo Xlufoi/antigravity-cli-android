@@ -5,9 +5,9 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Folder
-import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.Key
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -17,8 +17,8 @@ import androidx.compose.ui.unit.sp
 import com.google.antigravity.ui.chat.components.ChatInputBar
 import com.google.antigravity.ui.chat.components.MessageBubble
 import com.google.antigravity.ui.theme.AgAccent
-import com.google.antigravity.ui.theme.AgBorder
 import com.google.antigravity.ui.theme.AgDarkBackground
+import com.google.antigravity.ui.theme.AgSurfaceVariant
 import com.google.antigravity.ui.theme.AgTextPrimary
 import com.google.antigravity.ui.theme.AgTextSecondary
 import kotlinx.coroutines.launch
@@ -32,6 +32,8 @@ fun ChatScreen(
     val uiState by viewModel.uiState.collectAsState()
     val listState = rememberLazyListState()
     val coroutineScope = rememberCoroutineScope()
+    var showAuthDialog by remember { mutableStateOf(false) }
+    var tokenInput by remember { mutableStateOf("") }
 
     LaunchedEffect(uiState.messages.size) {
         if (uiState.messages.isNotEmpty()) {
@@ -58,7 +60,7 @@ fun ChatScreen(
                             )
                             Spacer(modifier = Modifier.width(6.dp))
                             Text(
-                                text = if (uiState.isEngineReady) "Engine Ready • ${uiState.activeModel}" else "Initializing...",
+                                text = if (uiState.isEngineReady) "Engine Ready • ${uiState.activeModel}" else "Initializing Engine...",
                                 fontSize = 11.sp,
                                 color = AgTextSecondary
                             )
@@ -69,11 +71,8 @@ fun ChatScreen(
                     containerColor = AgDarkBackground
                 ),
                 actions = {
-                    IconButton(onClick = { /* Open workspace picker */ }) {
-                        Icon(Icons.Default.Folder, contentDescription = "Workspace", tint = AgTextSecondary)
-                    }
-                    IconButton(onClick = { /* Open settings */ }) {
-                        Icon(Icons.Default.Settings, contentDescription = "Settings", tint = AgTextSecondary)
+                    IconButton(onClick = { showAuthDialog = true }) {
+                        Icon(Icons.Default.Key, contentDescription = "OAuth Token", tint = AgTextSecondary)
                     }
                 }
             )
@@ -100,5 +99,53 @@ fun ChatScreen(
                 MessageBubble(message = message)
             }
         }
+    }
+
+    if (showAuthDialog) {
+        AlertDialog(
+            onDismissRequest = { showAuthDialog = false },
+            title = { Text("Авторизация Gemini / OAuth", color = AgTextPrimary) },
+            text = {
+                Column {
+                    Text(
+                        "Вставьте Google OAuth токен или Gemini API токен:",
+                        fontSize = 13.sp,
+                        color = AgTextSecondary
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    TextField(
+                        value = tokenInput,
+                        onValueChange = { tokenInput = it },
+                        placeholder = { Text("ya29... или AIza...", fontSize = 12.sp) },
+                        colors = TextFieldDefaults.colors(
+                            focusedContainerColor = AgSurfaceVariant,
+                            unfocusedContainerColor = AgSurfaceVariant,
+                            focusedTextColor = AgTextPrimary,
+                            unfocusedTextColor = AgTextPrimary
+                        ),
+                        shape = RoundedCornerShape(8.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        if (tokenInput.isNotBlank()) {
+                            viewModel.updateToken(tokenInput.trim())
+                        }
+                        showAuthDialog = false
+                    }
+                ) {
+                    Text("Сохранить и подключить")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showAuthDialog = false }) {
+                    Text("Отмена")
+                }
+            },
+            containerColor = AgSurfaceVariant
+        )
     }
 }

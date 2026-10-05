@@ -1,5 +1,6 @@
 package com.google.antigravity.data.ipc
 
+import android.content.Context
 import android.util.Log
 import com.google.antigravity.data.model.AgpStreamMessage
 import kotlinx.coroutines.Dispatchers
@@ -15,9 +16,10 @@ import java.io.InputStreamReader
 import java.io.OutputStreamWriter
 
 class NativeProcessManager(
-    private val binaryPath: String,
-    private val workspacePath: String,
-    private val model: String = "Gemini 3.8 Flash (High)"
+    private val context: Context,
+    private val workspacePath: String = context.filesDir.absolutePath + "/workspace",
+    private val model: String = "Gemini 3.8 Flash (High)",
+    private val oauthToken: String? = null
 ) {
     private var process: Process? = null
     private var writer: BufferedWriter? = null
@@ -33,33 +35,52 @@ class NativeProcessManager(
                 return@withContext true
             }
 
-            val binaryFile = File(binaryPath)
-            if (!binaryFile.exists()) {
-                Log.e(TAG, "Antigravity binary not found at $binaryPath")
+            // Ensure standalone engine is unpacked into app private filesDir
+            val engineDir = EngineInstaller.ensureInstalled(context)
+            val ldLoader = File(engineDir, "ld-linux-aarch64.so.1")
+            val agyBinary = File(engineDir, "agy.va39")
+            val libDir = File(engineDir, "lib")
+
+            if (!agyBinary.exists() || !ldLoader.exists()) {
+                Log.e(TAG, "Engine files missing in $engineDir")
                 return@withContext false
             }
 
+            val workspaceDir = File(workspacePath)
+            if (!workspaceDir.exists()) workspaceDir.mkdirs()
+
+            // Prepare local user config and oauth token
+            val geminiDir = File(context.filesDir, ".gemini/antigravity-cli")
+            geminiDir.mkdirs()
+            if (!oauthToken.isNullOrBlank()) {
+                val tokenFile = File(geminiDir, "antigravity-oauth-token")
+                val tokenJson = """{"token":{"access_token":"$oauthToken"}}"""
+                tokenFile.writeText(tokenJson)
+            }
+
             val command = listOf(
-                binaryPath,
+                ldLoader.absolutePath,
+                "--library-path", libDir.absolutePath,
+                agyBinary.absolutePath,
                 "--input-format", "stream-json",
                 "--output-format", "stream-json",
                 "--model", model,
-                "--add-dir", workspacePath
+                "--dangerously-skip-permissions",
+                "--add-dir", workspaceDir.absolutePath
             )
 
             val pb = ProcessBuilder(command)
-            pb.directory(File(workspacePath))
-            
-            // Setup Android environment variables
+            pb.directory(workspaceDir)
+
             val env = pb.environment()
-            env["HOME"] = workspacePath
+            env["HOME"] = context.filesDir.absolutePath
             env["TERM"] = "xterm-256color"
             env["LANG"] = "en_US.UTF-8"
-            
+
             val proc = pb.start()
             process = proc
             writer = BufferedWriter(OutputStreamWriter(proc.outputStream))
-            Log.i(TAG, "Antigravity engine process started successfully (PID: ${proc})")
+            Log.i(TAG, "Antigravity engine process started successfully (PID: $proc)")
             true
         } catch (e: Exception) {
             Log.e(TAG, "Error starting native engine", e)
@@ -70,7 +91,6 @@ class NativeProcessManager(
     suspend fun sendUserPrompt(prompt: String): Boolean = withContext(Dispatchers.IO) {
         val w = writer ?: return@withContext false
         try {
-            // Write prompt formatted as a single-line NDJSON message
             val escaped = prompt.replace("\"", "\\\"").replace("\n", "\\n")
             val payload = "{\"type\":\"user_prompt\",\"prompt\":\"$escaped\"}\n"
             w.write(payload)
@@ -94,7 +114,6 @@ class NativeProcessManager(
                         val message = json.decodeFromString<AgpStreamMessage>(line)
                         emit(message)
                     } catch (e: Exception) {
-                        // Fallback text event if line is plain text
                         emit(AgpStreamMessage(type = "text", text = line))
                     }
                 }

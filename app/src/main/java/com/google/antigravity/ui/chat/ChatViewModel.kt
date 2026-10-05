@@ -14,9 +14,8 @@ data class ChatUiState(
     val messages: List<ChatMessage> = emptyList(),
     val isStreaming: Boolean = false,
     val isEngineReady: Boolean = false,
-    val currentWorkspace: String = "/data/data/com.termux/files/home",
     val activeModel: String = "Gemini 3.8 Flash (High)",
-    val binaryPath: String = "/data/data/com.termux/files/usr/bin/agy"
+    val oauthToken: String = ""
 )
 
 class ChatViewModel(
@@ -31,12 +30,12 @@ class ChatViewModel(
         initEngine()
     }
 
-    private fun initEngine() {
+    fun initEngine(token: String? = null) {
         viewModelScope.launch {
+            val tokenToUse = token ?: _uiState.value.oauthToken.ifBlank { null }
             val success = repository.startSession(
-                binaryPath = _uiState.value.binaryPath,
-                workspacePath = _uiState.value.currentWorkspace,
-                model = _uiState.value.activeModel
+                model = _uiState.value.activeModel,
+                oauthToken = tokenToUse
             )
             _uiState.update { it.copy(isEngineReady = success) }
         }
@@ -68,6 +67,11 @@ class ChatViewModel(
             _uiState.update { it.copy(isStreaming = true) }
             repository.sendMessage(prompt)
         }
+    }
+
+    fun updateToken(token: String) {
+        _uiState.update { it.copy(oauthToken = token) }
+        initEngine(token)
     }
 
     fun stopSession() {
