@@ -11,6 +11,8 @@ import com.google.antigravity.domain.model.MessageSender
 import com.google.antigravity.domain.model.ModelInfo
 import com.google.antigravity.domain.model.UsageStats
 import com.google.antigravity.domain.repository.AgentRepository
+import com.google.antigravity.data.ipc.AppLogger
+import com.google.antigravity.domain.model.UserQuotaSummary
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -52,7 +54,10 @@ data class ChatUiState(
     val isGeneratingAuthUrl: Boolean = false,
     val showOAuthWebView: Boolean = false,
     // Quota & Usage
-    val usageStats: UsageStats = UsageStats()
+    val usageStats: UsageStats = UsageStats(),
+    val quotaSummary: UserQuotaSummary = UserQuotaSummary(),
+    val isSyncingQuota: Boolean = false,
+    val liveLogs: List<String> = emptyList()
 )
 
 class ChatViewModel(
@@ -66,11 +71,13 @@ class ChatViewModel(
         _uiState.update { it.copy(workspacePath = repository.getWorkspacePath()) }
         observeMessages()
         observeUsageStats()
+        observeLiveLogs()
         loadModels()
         loadAccounts()
         checkSystemPrivileges()
         loadSessions()
         initEngine()
+        syncQuota()
     }
 
     fun setTab(tab: AppTab) {
@@ -78,6 +85,7 @@ class ChatViewModel(
         if (tab == AppTab.CONTROL_CENTER) {
             checkSystemPrivileges()
             loadAccounts()
+            syncQuota()
         }
     }
 
@@ -251,6 +259,31 @@ class ChatViewModel(
                 _uiState.update { it.copy(usageStats = stats.copy(contextWindowLimit = limit)) }
             }
         }
+    }
+
+    private fun observeLiveLogs() {
+        viewModelScope.launch {
+            AppLogger.liveLogs.collect { logs ->
+                _uiState.update { it.copy(liveLogs = logs) }
+            }
+        }
+    }
+
+    fun syncQuota() {
+        viewModelScope.launch {
+            _uiState.update { it.copy(isSyncingQuota = true) }
+            val summary = repository.syncQuota()
+            _uiState.update {
+                it.copy(
+                    quotaSummary = summary,
+                    isSyncingQuota = false
+                )
+            }
+        }
+    }
+
+    fun exportLogsToDownloads(context: android.content.Context): String {
+        return AppLogger.exportToDownloads(context)
     }
 
     private fun getContextWindowForModel(modelName: String): Long {

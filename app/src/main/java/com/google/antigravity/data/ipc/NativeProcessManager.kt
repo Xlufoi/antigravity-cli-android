@@ -267,6 +267,8 @@ class NativeProcessManager(
             libDir.absolutePath
         ).joinToString(":")
 
+        val cleanModel = model.split(Regex("[\\t\\s]")).firstOrNull()?.trim()?.ifBlank { "gemini-3.8-flash-low" } ?: "gemini-3.8-flash-low"
+
         val command = mutableListOf(
             nativeLd.absolutePath,
             "--library-path", libraryPaths,
@@ -274,19 +276,8 @@ class NativeProcessManager(
             "-p", prompt,
             "--continue",
             "--output-format", "stream-json",
-            "--model", model
+            "--model", cleanModel
         )
-
-        // Only pass --effort for models that support it (Gemini). Claude and GPT do not support --effort.
-        if (!model.startsWith("claude", ignoreCase = true) && !model.startsWith("gpt", ignoreCase = true)) {
-            val effortValue = when {
-                model.contains("high", ignoreCase = true) -> "high"
-                model.contains("medium", ignoreCase = true) -> "medium"
-                else -> "low"
-            }
-            command.add("--effort")
-            command.add(effortValue)
-        }
 
         command.add("--add-dir")
         command.add(workspaceDir.absolutePath)
@@ -358,12 +349,15 @@ class NativeProcessManager(
             currentProcess = proc
             val reader = BufferedReader(InputStreamReader(proc.inputStream))
             val errReader = BufferedReader(InputStreamReader(proc.errorStream))
+            val errLines = java.util.Collections.synchronizedList(mutableListOf<String>())
+            var chunkEmitted = false
 
             // Thread to monitor STDERR for logs & OAuth login URL
             val errThread = Thread {
                 try {
                     errReader.forEachLine { errLine ->
                         AppLogger.log(TAG, "STDERR: $errLine")
+                        errLines.add(errLine)
                         if (errLine.contains("https://accounts.google.com/o/oauth2/auth") ||
                             (errLine.contains("https://") && errLine.contains("oauth"))) {
                             val start = errLine.indexOf("https://")
@@ -409,10 +403,12 @@ class NativeProcessManager(
                             }
 
                             if (textDelta != null) {
+                                chunkEmitted = true
                                 send(AgpStreamMessage(type = "chunk", text = textDelta))
                             } else if (stepType == "tool") {
                                 val toolName = stepUpdate?.get("tool_name")?.jsonPrimitive?.content ?: "tool"
                                 if (state == "ACTIVE") {
+                                    chunkEmitted = true
                                     send(AgpStreamMessage(type = "tool_start", text = "▸ [tool: $toolName] running..."))
                                 }
                             }
@@ -440,6 +436,7 @@ class NativeProcessManager(
                             }
 
                             if (!resText.isNullOrBlank()) {
+                                chunkEmitted = true
                                 send(AgpStreamMessage(type = "final", text = resText))
                             }
                             emitDone()
@@ -456,6 +453,7 @@ class NativeProcessManager(
                         val start = l.indexOf("https://")
                         send(AgpStreamMessage(type = "auth_url", text = l.substring(start).trim()))
                     } else {
+                        chunkEmitted = true
                         send(AgpStreamMessage(type = "chunk", text = l + "\n"))
                     }
                 }
@@ -463,11 +461,27 @@ class NativeProcessManager(
 
             proc.waitFor()
             try { errThread.join(500) } catch (_: Exception) {}
+
+            val exitCode = proc.exitValue()
+            if (exitCode != 0 && !chunkEmitted) {
+                val errorSummary = synchronized(errLines) {
+                    val meaningful = errLines.filter {
+                        it.contains("error", ignoreCase = true) ||
+                        it.contains("invalid", ignoreCase = true) ||
+                        it.contains("failed", ignoreCase = true) ||
+                        it.contains("fatal", ignoreCase = true)
+                    }
+                    if (meaningful.isNotEmpty()) meaningful.joinToString("\n")
+                    else errLines.takeLast(6).joinToString("\n")
+                }
+                send(AgpStreamMessage(type = "chunk", text = "[CLI ERROR - exit code $exitCode]:\n$errorSummary\n"))
+            }
+
             emitDone()
-            AppLogger.log(TAG, "Turn completed with exit code: ${proc.exitValue()}")
+            AppLogger.log(TAG, "Turn completed with exit code: $exitCode")
         } catch (e: Exception) {
             AppLogger.log(TAG, "Execution failed: ${e.message}\n${e.stackTraceToString()}")
-            send(AgpStreamMessage(type = "chunk", text = "Ошибка выполнения: ${e.localizedMessage}"))
+            send(AgpStreamMessage(type = "chunk", text = "[Execution Error]: ${e.localizedMessage}"))
             emitDone()
         } finally {
             currentProcess = null
@@ -527,16 +541,15 @@ class NativeProcessManager(
             env["RES_OPTIONS"] = "timeout:2 attempts:3"
 
             val proc = pb.start()
-            val reader = BufferedReader(InputStreamReader(proc.inputStream))
+            val allOutput = proc.inputStream.bufferedReader().readText()
             val models = mutableListOf<ModelInfo>()
-
-            reader.forEachLine { line ->
-                val l = line.trim()
-                if (l.isNotEmpty() && !l.contains("Fetching available models") && !l.startsWith("[") && !l.startsWith("⠋")) {
-                    val parts = l.split(Regex("\\s{2,}"), limit = 2)
-                    if (parts.isNotEmpty()) {
-                        val id = parts[0].trim()
-                        val displayName = if (parts.size > 1) parts[1].trim() else id
+            allOutput.split("\n").forEach { rawLine ->
+                val line = rawLine.substringAfterLast('\r').trim()
+                if (line.isNotEmpty() && !line.startsWith("⠋") && !line.startsWith("Fetching") && !line.startsWith("[")) {
+                    val tokens = line.split(Regex("\\s+"), limit = 2)
+                    if (tokens.isNotEmpty() && tokens[0].isNotBlank()) {
+                        val id = tokens[0].trim()
+                        val displayName = if (tokens.size > 1 && tokens[1].isNotBlank()) tokens[1].trim() else id
                         val effort = when {
                             id.contains("high") -> "high"
                             id.contains("medium") -> "medium"

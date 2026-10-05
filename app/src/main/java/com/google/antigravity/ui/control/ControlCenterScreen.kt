@@ -11,6 +11,9 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -128,8 +131,24 @@ fun ControlCenterScreen(
             when (selectedTab) {
                 // ==================== TAB 1: ACCOUNTS & QUOTA ====================
                 SettingsSubTab.ACCOUNTS -> {
-                    // --- SECTION 1: QUOTA (EXACTLY MATCHING SCREENSHOT 2) ---
-                    SectionHeader("QUOTA AND LIMITS")
+                    // --- SECTION 1: QUOTA (MATCHING SCREENSHOT 2 WITH LIVE SYNC) ---
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        SectionHeader("QUOTA AND LIMITS")
+                        Text(
+                            text = if (uiState.isSyncingQuota) "[SYNCING...]" else "[SYNC QUOTA]",
+                            color = if (uiState.isSyncingQuota) AgTerminalAmber else AgTerminalPrompt,
+                            fontFamily = FontFamily.Monospace,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 11.sp,
+                            modifier = Modifier.clickable(enabled = !uiState.isSyncingQuota) {
+                                viewModel.syncQuota()
+                            }
+                        )
+                    }
 
                     Column(
                         modifier = Modifier
@@ -137,69 +156,89 @@ fun ControlCenterScreen(
                             .padding(vertical = 4.dp),
                         verticalArrangement = Arrangement.spacedBy(12.dp)
                     ) {
-                        // GEMINI MODELS GROUP
-                        Text(
-                            text = "GEMINI MODELS",
-                            color = AgTextPrimary,
-                            fontFamily = FontFamily.Monospace,
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 13.sp
-                        )
-                        Text(
-                            text = "  Models within this group: Gemini Flash, Gemini Pro",
-                            color = AgTextSecondary,
-                            fontFamily = FontFamily.Monospace,
-                            fontSize = 11.sp
-                        )
+                        if (uiState.quotaSummary.groups.isNotEmpty()) {
+                            uiState.quotaSummary.groups.forEach { group ->
+                                Text(
+                                    text = group.displayName.uppercase(),
+                                    color = AgTextPrimary,
+                                    fontFamily = FontFamily.Monospace,
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 13.sp
+                                )
+                                if (group.description.isNotBlank()) {
+                                    Text(
+                                        text = "  ${group.description}",
+                                        color = AgTextSecondary,
+                                        fontFamily = FontFamily.Monospace,
+                                        fontSize = 11.sp
+                                    )
+                                }
+                                group.buckets.forEach { bucket ->
+                                    AsciiQuotaBlock(
+                                        label = bucket.displayName,
+                                        percent = bucket.remainingPercent,
+                                        refreshesIn = bucket.getRefreshText(),
+                                        isYellow = bucket.remainingPercent < 50f
+                                    )
+                                }
+                                Spacer(modifier = Modifier.height(2.dp))
+                            }
+                        } else {
+                            // Default display matching Screenshot 2 until first sync
+                            Text(
+                                text = "GEMINI MODELS",
+                                color = AgTextPrimary,
+                                fontFamily = FontFamily.Monospace,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 13.sp
+                            )
+                            Text(
+                                text = "  Models within this group: Gemini Flash, Gemini Pro",
+                                color = AgTextSecondary,
+                                fontFamily = FontFamily.Monospace,
+                                fontSize = 11.sp
+                            )
+                            AsciiQuotaBlock(
+                                label = "Weekly Limit Remaining",
+                                percent = 100f,
+                                refreshesIn = "Refreshes in 168h 0m",
+                                isYellow = false
+                            )
+                            AsciiQuotaBlock(
+                                label = "Five Hour Limit Remaining",
+                                percent = ((uiState.usageStats.remainingPercent)).coerceIn(10f, 100f),
+                                refreshesIn = "Refreshes in 4h 52m",
+                                isYellow = uiState.usageStats.remainingPercent < 50f
+                            )
 
-                        // Gemini Weekly Limit
-                        AsciiQuotaBlock(
-                            label = "Weekly Limit Remaining",
-                            percent = 100f,
-                            refreshesIn = "Refreshes in 168h 0m",
-                            isYellow = false
-                        )
+                            Spacer(modifier = Modifier.height(4.dp))
 
-                        // Gemini 5h limit
-                        AsciiQuotaBlock(
-                            label = "Five Hour Limit Remaining",
-                            percent = ((uiState.usageStats.remainingPercent)).coerceIn(10f, 100f),
-                            refreshesIn = "Refreshes in 4h 52m",
-                            isYellow = uiState.usageStats.remainingPercent < 50f
-                        )
-
-                        Spacer(modifier = Modifier.height(4.dp))
-
-                        // CLAUDE AND GPT MODELS GROUP
-                        Text(
-                            text = "CLAUDE AND GPT MODELS",
-                            color = AgTextPrimary,
-                            fontFamily = FontFamily.Monospace,
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 13.sp
-                        )
-                        Text(
-                            text = "  Models within this group: Claude Opus, Claude Sonnet, GPT-OSS",
-                            color = AgTextSecondary,
-                            fontFamily = FontFamily.Monospace,
-                            fontSize = 11.sp
-                        )
-
-                        // Claude Weekly Limit
-                        AsciiQuotaBlock(
-                            label = "Weekly Limit Remaining",
-                            percent = 94.06f,
-                            refreshesIn = "Refreshes in 162h 37m",
-                            isYellow = false
-                        )
-
-                        // Claude 5h limit
-                        AsciiQuotaBlock(
-                            label = "Five Hour Limit Remaining",
-                            percent = 95.99f,
-                            refreshesIn = "Refreshes in 4h 37m",
-                            isYellow = false
-                        )
+                            Text(
+                                text = "CLAUDE AND GPT MODELS",
+                                color = AgTextPrimary,
+                                fontFamily = FontFamily.Monospace,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 13.sp
+                            )
+                            Text(
+                                text = "  Models within this group: Claude Opus, Claude Sonnet, GPT-OSS",
+                                color = AgTextSecondary,
+                                fontFamily = FontFamily.Monospace,
+                                fontSize = 11.sp
+                            )
+                            AsciiQuotaBlock(
+                                label = "Weekly Limit Remaining",
+                                percent = 94.06f,
+                                refreshesIn = "Refreshes in 162h 37m",
+                                isYellow = false
+                            )
+                            AsciiQuotaBlock(
+                                label = "Five Hour Limit Remaining",
+                                percent = 95.99f,
+                                refreshesIn = "Refreshes in 4h 37m",
+                                isYellow = false
+                            )
+                        }
 
                         // Active Context details
                         Text(
@@ -660,6 +699,87 @@ fun ControlCenterScreen(
                             colors = ButtonDefaults.outlinedButtonColors(contentColor = AgTerminalPrompt)
                         ) {
                             Text("[CHANGE DIR]", fontFamily = FontFamily.Monospace, fontSize = 11.sp)
+                        }
+                    }
+
+                    HorizontalDivider(color = AgSeparator, thickness = 1.dp)
+
+                    // 6. SYSTEM & ENGINE LOGGING (User Request)
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        SectionHeader("SYSTEM & ENGINE LOGS")
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Text(
+                                text = "[COPY]",
+                                color = AgTerminalPrompt,
+                                fontFamily = FontFamily.Monospace,
+                                fontSize = 11.sp,
+                                modifier = Modifier.clickable {
+                                    val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager
+                                    val clip = ClipData.newPlainText("Antigravity Logs", uiState.liveLogs.joinToString("\n"))
+                                    clipboard?.setPrimaryClip(clip)
+                                    Toast.makeText(context, "Logs copied to clipboard", Toast.LENGTH_SHORT).show()
+                                }
+                            )
+                            Text(
+                                text = "[EXPORT]",
+                                color = AgTerminalGreen,
+                                fontFamily = FontFamily.Monospace,
+                                fontSize = 11.sp,
+                                modifier = Modifier.clickable {
+                                    val path = viewModel.exportLogsToDownloads(context)
+                                    Toast.makeText(context, "Saved to $path", Toast.LENGTH_LONG).show()
+                                }
+                            )
+                        }
+                    }
+
+                    // Monospace terminal log box
+                    val logBoxState = rememberLazyListState()
+                    LaunchedEffect(uiState.liveLogs.size) {
+                        if (uiState.liveLogs.isNotEmpty()) {
+                            logBoxState.scrollToItem(uiState.liveLogs.size - 1)
+                        }
+                    }
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(240.dp)
+                            .background(Color(0xFF0A0A0A))
+                            .border(1.dp, AgBorder)
+                            .padding(8.dp)
+                    ) {
+                        if (uiState.liveLogs.isEmpty()) {
+                            Text(
+                                text = "> Logs will appear here as engine and commands execute...",
+                                color = AgTerminalDim,
+                                fontFamily = FontFamily.Monospace,
+                                fontSize = 10.sp
+                            )
+                        } else {
+                            LazyColumn(
+                                state = logBoxState,
+                                modifier = Modifier.fillMaxSize()
+                            ) {
+                                items(uiState.liveLogs) { line ->
+                                    val textColor = when {
+                                        line.contains("ERR", ignoreCase = true) || line.contains("failed", ignoreCase = true) -> AgError
+                                        line.contains("SUCCESS", ignoreCase = true) || line.contains("OK", ignoreCase = true) -> AgTerminalGreen
+                                        line.contains("STDERR", ignoreCase = true) -> AgTerminalAmber
+                                        else -> AgTextSecondary
+                                    }
+                                    Text(
+                                        text = line,
+                                        color = textColor,
+                                        fontFamily = FontFamily.Monospace,
+                                        fontSize = 10.sp,
+                                        lineHeight = 14.sp
+                                    )
+                                }
+                            }
                         }
                     }
                 }

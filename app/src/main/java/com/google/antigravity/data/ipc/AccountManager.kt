@@ -125,4 +125,22 @@ class AccountManager(private val context: Context) {
         }
         AppLogger.log(TAG, "Deleted account ID: $id")
     }
+
+    fun getActiveAccessToken(): String? {
+        return try {
+            if (!tokenFile.exists()) return null
+            val content = tokenFile.readText().trim()
+            if (content.startsWith("{")) {
+                val obj = org.json.JSONObject(content)
+                val tokenObj = obj.optJSONObject("token")
+                val tok = tokenObj?.optString("access_token")?.ifBlank { null }
+                    ?: obj.optString("access_token").ifBlank { null }
+                tok
+            } else if (content.isNotBlank()) {
+                content
+            } else null
+        } catch (_: Exception) {
+            null
+        }
+    }
 }

@@ -35,4 +35,5 @@ interface AgentRepository {
     fun hasStoragePermission(): Boolean
     fun requestStoragePermission()
     fun grantStorageViaRoot(): Boolean
+    suspend fun syncQuota(): com.google.antigravity.domain.model.UserQuotaSummary
 }

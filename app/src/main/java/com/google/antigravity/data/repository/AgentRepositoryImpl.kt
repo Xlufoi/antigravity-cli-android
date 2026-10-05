@@ -52,20 +52,10 @@ class AgentRepositoryImpl(private val context: Context) : AgentRepository {
     override suspend fun sendMessage(prompt: String): Boolean {
         val manager = processManager ?: return false
 
-        // If process is already waiting for input (e.g. auth code or prompt)
-        if (manager.sendInput(prompt)) {
-            _messagesFlow.emit(
-                ChatMessage(
-                    sender = MessageSender.USER,
-                    text = prompt,
-                    isStreaming = false
-                )
-            )
-            return true
-        }
-
+        val userMessageId = UUID.randomUUID().toString()
         _messagesFlow.emit(
             ChatMessage(
+                id = userMessageId,
                 sender = MessageSender.USER,
                 text = prompt,
                 isStreaming = false
@@ -214,4 +204,9 @@ class AgentRepositoryImpl(private val context: Context) : AgentRepository {
     override fun hasStoragePermission(): Boolean = com.google.antigravity.data.ipc.StoragePermissionHelper.hasStoragePermission(context)
     override fun requestStoragePermission() = com.google.antigravity.data.ipc.StoragePermissionHelper.requestStoragePermission(context)
     override fun grantStorageViaRoot(): Boolean = com.google.antigravity.data.ipc.StoragePermissionHelper.tryGrantStorageViaRoot(context)
+
+    override suspend fun syncQuota(): com.google.antigravity.domain.model.UserQuotaSummary {
+        val token = accountManager.getActiveAccessToken() ?: ""
+        return com.google.antigravity.data.ipc.QuotaClient.fetchQuotaSummary(token)
+    }
 }
