@@ -9,7 +9,7 @@ import java.io.FileOutputStream
 
 object EngineInstaller {
     private const val TAG = "EngineInstaller"
-    private const val ENGINE_VERSION = "2.6"
+    private const val ENGINE_VERSION = "3.0"
 
     private val BUSYBOX_APPLETS = listOf(
         "[", "[[", "ar", "arch", "arp", "arping", "ascii", "ash", "awk", "base32", "base64",
@@ -43,12 +43,14 @@ object EngineInstaller {
         val isVersionMatch = versionFile.exists() && versionFile.readText().trim() == ENGINE_VERSION
         val nativeLibDir = File(context.applicationInfo.nativeLibraryDir)
         val libBash = File(nativeLibDir, "libbash.so")
+        val usrLib = File(context.filesDir, "usr/lib")
+        val pythonLib = File(usrLib, "python3.14")
 
         val ready = agyBinary.exists() && ldLoader.exists() && agyBinary.length() > 50_000_000 &&
-                isVersionMatch && libBash.exists()
+                isVersionMatch && libBash.exists() && pythonLib.exists()
 
         if (!ready) {
-            AppLogger.log(TAG, "isEngineReady: false (agy=${agyBinary.exists()}/${agyBinary.length()}, ld=${ldLoader.exists()}, ver=$isVersionMatch, libbash=${libBash.exists()})")
+            AppLogger.log(TAG, "isEngineReady: false (agy=${agyBinary.exists()}/${agyBinary.length()}, ld=${ldLoader.exists()}, ver=$isVersionMatch, libbash=${libBash.exists()}, pythonLib=${pythonLib.exists()})")
         }
         return ready
     }
@@ -75,6 +77,7 @@ object EngineInstaller {
             val assetNames = context.assets.list("") ?: emptyArray()
             AppLogger.log(TAG, "Assets found: ${assetNames.joinToString(", ")}")
             val tarAssetName = assetNames.firstOrNull { it.startsWith("engine-bundle") }
+            val termuxAssetName = assetNames.firstOrNull { it.startsWith("termux-bundle") }
 
             if (tarAssetName == null) {
                 val errorMsg = "Ошибка: архив engine-bundle не найден в assets!"
@@ -85,8 +88,8 @@ object EngineInstaller {
 
             // Extract engine bundle if missing
             if (!agyBinary.exists() || !ldLoader.exists() || agyBinary.length() < 50_000_000) {
-                AppLogger.log(TAG, "Using asset: $tarAssetName")
-                onProgress(0.15f, "Копирование архива $tarAssetName...")
+                AppLogger.log(TAG, "Using engine asset: $tarAssetName")
+                onProgress(0.10f, "Копирование архива $tarAssetName...")
 
                 val tempTarFile = File(context.cacheDir, "engine-temp.tar")
                 context.assets.open(tarAssetName).use { input ->
@@ -97,14 +100,14 @@ object EngineInstaller {
                         while (input.read(buffer).also { bytesRead = it } != -1) {
                             output.write(buffer, 0, bytesRead)
                             totalCopied += bytesRead
-                            val copyProgress = 0.15f + (totalCopied / 80_000_000f).coerceAtMost(0.45f)
-                            onProgress(copyProgress, "Копирование: ${totalCopied / (1024 * 1024)} МБ...")
+                            val copyProgress = 0.10f + (totalCopied / 80_000_000f).coerceAtMost(0.35f)
+                            onProgress(copyProgress, "Копирование ядра: ${totalCopied / (1024 * 1024)} МБ...")
                         }
                     }
                 }
 
-                AppLogger.log(TAG, "Copied temp archive: ${tempTarFile.length()} bytes")
-                onProgress(0.65f, "Распаковка ядра в engine/ (200 МБ)...")
+                AppLogger.log(TAG, "Copied temp engine archive: ${tempTarFile.length()} bytes")
+                onProgress(0.45f, "Распаковка ядра в engine/ (200 МБ)...")
 
                 val extracted = extractTarArchive(tempTarFile, engineDir)
                 tempTarFile.delete()
@@ -121,7 +124,37 @@ object EngineInstaller {
                 File(engineDir, "lib").listFiles()?.forEach { it.setExecutable(true, false) }
             }
 
-            onProgress(0.85f, "Настройка изолированного окружения Termux (bash, busybox, curl, git)...")
+            // Extract embedded Termux bundle (ffmpeg, python, stdlib, codecs)
+            val usrLib = File(context.filesDir, "usr/lib")
+            val pythonLib = File(usrLib, "python3.14")
+            if (termuxAssetName != null && (!pythonLib.exists() || pythonLib.list().isNullOrEmpty())) {
+                AppLogger.log(TAG, "Using Termux asset: $termuxAssetName")
+                onProgress(0.50f, "Копирование архива Termux ($termuxAssetName)...")
+
+                val tempTermuxTar = File(context.cacheDir, "termux-temp.tar")
+                context.assets.open(termuxAssetName).use { input ->
+                    FileOutputStream(tempTermuxTar).use { output ->
+                        val buffer = ByteArray(64 * 1024)
+                        var bytesRead: Int
+                        var totalCopied = 0L
+                        while (input.read(buffer).also { bytesRead = it } != -1) {
+                            output.write(buffer, 0, bytesRead)
+                            totalCopied += bytesRead
+                            val copyProgress = 0.50f + (totalCopied / 60_000_000f).coerceAtMost(0.25f)
+                            onProgress(copyProgress, "Копирование Termux: ${totalCopied / (1024 * 1024)} МБ...")
+                        }
+                    }
+                }
+
+                AppLogger.log(TAG, "Copied temp Termux archive: ${tempTermuxTar.length()} bytes")
+                onProgress(0.75f, "Распаковка встроенного Termux (ffmpeg, python3, библиотеки)...")
+
+                val extractedTermux = extractTarArchive(tempTermuxTar, context.filesDir)
+                tempTermuxTar.delete()
+                AppLogger.log(TAG, "Termux bundle extraction result: $extractedTermux")
+            }
+
+            onProgress(0.90f, "Настройка встроенного окружения Termux...")
             setupSandboxLinuxEnvironment(context)
 
             File(engineDir, ".version").writeText(ENGINE_VERSION)
@@ -131,7 +164,7 @@ object EngineInstaller {
                 AppLogger.log(TAG, "INSTALLATION COMPLETED SUCCESSFULLY! Binary size=${agyBinary.length()}")
                 onProgress(1.0f, "Распаковка успешно завершена!")
             } else {
-                val errorMsg = "Ошибка проверки: файлы не найдены (agy=${agyBinary.exists()})"
+                val errorMsg = "Ошибка проверки: файлы не найдены (agy=${agyBinary.exists()}, pythonLib=${pythonLib.exists()})"
                 AppLogger.log(TAG, errorMsg)
                 onProgress(0f, errorMsg)
             }
@@ -183,6 +216,8 @@ object EngineInstaller {
             val libBusybox = File(nativeLibDir, "libbusybox_exec.so")
             val libCurl = File(nativeLibDir, "libcurl_exec.so")
             val libGit = File(nativeLibDir, "libgit_exec.so")
+            val libFfmpeg = File(nativeLibDir, "libffmpeg_exec.so")
+            val libPython = File(nativeLibDir, "libpython3_exec.so")
 
             // 1. Link bash
             if (libBash.exists()) {
@@ -194,16 +229,32 @@ object EngineInstaller {
             // 2. Link curl and git
             if (libCurl.exists()) {
                 createSymlinkOrCopy(libCurl, File(usrBin, "curl"))
+                createSymlinkOrCopy(libCurl, File(binDir, "curl"))
             }
             if (libGit.exists()) {
                 createSymlinkOrCopy(libGit, File(usrBin, "git"))
+                createSymlinkOrCopy(libGit, File(binDir, "git"))
             }
 
-            // 3. Link busybox and applets (excluding su, bash, curl, git, sh)
+            // 3. Link embedded Termux ffmpeg and python3
+            if (libFfmpeg.exists()) {
+                createSymlinkOrCopy(libFfmpeg, File(usrBin, "ffmpeg"))
+                createSymlinkOrCopy(libFfmpeg, File(binDir, "ffmpeg"))
+            }
+            if (libPython.exists()) {
+                createSymlinkOrCopy(libPython, File(usrBin, "python3"))
+                createSymlinkOrCopy(libPython, File(usrBin, "python"))
+                createSymlinkOrCopy(libPython, File(binDir, "python3"))
+                createSymlinkOrCopy(libPython, File(binDir, "python"))
+            }
+
+            // 4. Link busybox and applets (excluding binaries handled above)
             if (libBusybox.exists()) {
                 createSymlinkOrCopy(libBusybox, File(usrBin, "busybox"))
                 for (applet in BUSYBOX_APPLETS) {
-                    if (applet == "busybox" || applet == "bash" || applet == "curl" || applet == "git" || applet == "sh" || applet == "su") continue
+                    if (applet == "busybox" || applet == "bash" || applet == "curl" ||
+                        applet == "git" || applet == "sh" || applet == "su" ||
+                        applet == "ffmpeg" || applet == "python" || applet == "python3") continue
                     createSymlinkOrCopy(libBusybox, File(usrBin, applet))
                     createSymlinkOrCopy(libBusybox, File(binDir, applet))
                 }
@@ -215,7 +266,7 @@ object EngineInstaller {
                 File(binDir, "su").delete()
             } catch (_: Exception) {}
 
-            // 4. Setup TLS / SSL certificates for curl and git
+            // 5. Setup TLS / SSL certificates for curl, git, python
             val caCertFile = File(context.filesDir, "cacert.pem")
             if (caCertFile.exists()) {
                 val tlsDir = File(usrDir, "etc/tls").apply { mkdirs() }
@@ -226,44 +277,23 @@ object EngineInstaller {
                 } catch (_: Exception) {}
             }
 
-            // 5. Setup .bashrc for bash commands (bridge to Termux tools if Root is available)
-            val d = '$'
+            // 6. Setup .bashrc for isolated sandbox
+            val usrLib = File(usrDir, "lib")
             val bashrcFile = File(context.filesDir, ".bashrc")
             bashrcFile.writeText(
                 """
-                # Antigravity mobile shell environment
+                # Antigravity mobile shell environment (Isolated Built-in Termux)
+                export PREFIX="${usrDir.absolutePath}"
+                export TERMUX_PREFIX="${usrDir.absolutePath}"
                 export PATH="${nativeLibDir.absolutePath}:${usrBin.absolutePath}:${binDir.absolutePath}:/system/bin:/system/xbin:/product/bin"
-                export LD_LIBRARY_PATH="${nativeLibDir.absolutePath}:/system/lib64"
-                
-                # Non-intrusive bridge: if Termux is installed and Root is available, expose tools without modifying Termux
-                if [ -x /system/bin/su ] && [ -d /data/data/com.termux/files/usr/bin ]; then
-                    python3() { /system/bin/su -c "export PATH=/data/data/com.termux/files/usr/bin:${d}PATH; export LD_LIBRARY_PATH=/data/data/com.termux/files/usr/lib; export HOME=/data/data/com.termux/files/home; python3 \"${d}@\""; }
-                    python() { /system/bin/su -c "export PATH=/data/data/com.termux/files/usr/bin:${d}PATH; export LD_LIBRARY_PATH=/data/data/com.termux/files/usr/lib; export HOME=/data/data/com.termux/files/home; python \"${d}@\""; }
-                    ffmpeg() { /system/bin/su -c "export PATH=/data/data/com.termux/files/usr/bin:${d}PATH; export LD_LIBRARY_PATH=/data/data/com.termux/files/usr/lib; export HOME=/data/data/com.termux/files/home; ffmpeg \"${d}@\""; }
-                    pip() { /system/bin/su -c "export PATH=/data/data/com.termux/files/usr/bin:${d}PATH; export LD_LIBRARY_PATH=/data/data/com.termux/files/usr/lib; export HOME=/data/data/com.termux/files/home; pip \"${d}@\""; }
-                    pip3() { /system/bin/su -c "export PATH=/data/data/com.termux/files/usr/bin:${d}PATH; export LD_LIBRARY_PATH=/data/data/com.termux/files/usr/lib; export HOME=/data/data/com.termux/files/home; pip3 \"${d}@\""; }
-                fi
+                export LD_LIBRARY_PATH="${usrLib.absolutePath}:${nativeLibDir.absolutePath}:/system/lib64"
+                export PYTHONHOME="${usrDir.absolutePath}"
+                export PYTHONPATH="${usrLib.absolutePath}/python3.14"
+                export HOME="${context.filesDir.absolutePath}"
+                export TMPDIR="${context.cacheDir.absolutePath}/tmp"
+                export SSL_CERT_FILE="${caCertFile.absolutePath}"
                 """.trimIndent()
             )
-
-            // 6. Create executable wrapper scripts for bridged tools
-            val bridgedTools = listOf("python3", "python", "ffmpeg", "pip", "pip3")
-            for (tool in bridgedTools) {
-                val toolFile = File(usrBin, tool)
-                if (!toolFile.exists()) {
-                    toolFile.writeText(
-                        """
-                        #!/system/bin/sh
-                        if [ -x /system/bin/su ] && [ -d /data/data/com.termux/files/usr/bin ]; then
-                            exec /system/bin/su -c "export PATH=/data/data/com.termux/files/usr/bin:${d}PATH; export LD_LIBRARY_PATH=/data/data/com.termux/files/usr/lib; export HOME=/data/data/com.termux/files/home; exec $tool \"${d}@\""
-                        fi
-                        echo "$tool: not found (requires root bridge to Termux)" >&2
-                        exit 127
-                        """.trimIndent()
-                    )
-                    toolFile.setExecutable(true, false)
-                }
-            }
 
             // 7. Ensure workspace directory exists
             File(context.filesDir, "workspace").mkdirs()

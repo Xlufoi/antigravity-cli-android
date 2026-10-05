@@ -330,10 +330,12 @@ class NativeProcessManager(
         val libBash = File(nativeLibDir, "libbash.so")
         val bashFile = File(usrBin, "bash")
         env["PATH"] = "${nativeLibDir.absolutePath}:${usrBin.absolutePath}:${binDir.absolutePath}:$systemBin"
-        env["LD_LIBRARY_PATH"] = "${nativeLibDir.absolutePath}:${usrLib.absolutePath}:$systemLib"
+        env["LD_LIBRARY_PATH"] = "${usrLib.absolutePath}:${nativeLibDir.absolutePath}:$systemLib"
         env["SHELL"] = if (libBash.exists()) libBash.absolutePath else if (bashFile.exists() && bashFile.canExecute()) bashFile.absolutePath else "/system/bin/sh"
         env["PREFIX"] = usrDir.absolutePath
         env["TERMUX_PREFIX"] = usrDir.absolutePath
+        env["PYTHONHOME"] = usrDir.absolutePath
+        env["PYTHONPATH"] = File(usrLib, "python3.14").absolutePath
         env["CURL_CA_BUNDLE"] = caCertFile.absolutePath
         env["GIT_SSL_CAINFO"] = caCertFile.absolutePath
 
@@ -401,8 +403,7 @@ class NativeProcessManager(
                                         lastInputTokens = inTok,
                                         lastOutputTokens = outTok,
                                         lastThinkingTokens = thinkTok,
-                                        lastTotalTokens = totTok,
-                                        sessionTotalTokens = prev.sessionTotalTokens + totTok
+                                        lastTotalTokens = totTok
                                     )
                                 }
                             }
@@ -432,7 +433,7 @@ class NativeProcessManager(
                                         lastOutputTokens = outTok,
                                         lastThinkingTokens = thinkTok,
                                         lastTotalTokens = totTok,
-                                        sessionTotalTokens = prev.sessionTotalTokens + totTok,
+                                        sessionTotalTokens = prev.sessionTotalTokens + outTok,
                                         turnsCount = prev.turnsCount + 1
                                     )
                                 }
@@ -601,9 +602,15 @@ class NativeProcessManager(
     }
 
     fun executeShellCommand(cmd: String, isRoot: Boolean, isShizuku: Boolean): String {
+        val usrDir = File(context.filesDir, "usr")
+        val usrBin = File(usrDir, "bin")
+        val usrLib = File(usrDir, "lib")
+        val binDir = File(context.filesDir, "bin")
+        val nativeLibDir = File(context.applicationInfo.nativeLibraryDir)
+
         return when {
             isRoot -> {
-                val fullCmd = "export PATH=/data/data/com.termux/files/usr/bin:\$PATH; export LD_LIBRARY_PATH=/data/data/com.termux/files/usr/lib; export HOME=/data/data/com.termux/files/home; cd '$workspacePath' 2>/dev/null; $cmd"
+                val fullCmd = "export PATH='${nativeLibDir.absolutePath}:${usrBin.absolutePath}:${binDir.absolutePath}:/system/bin:/system/xbin'; export LD_LIBRARY_PATH='${usrLib.absolutePath}:${nativeLibDir.absolutePath}:/system/lib64'; export PREFIX='${usrDir.absolutePath}'; export TERMUX_PREFIX='${usrDir.absolutePath}'; export PYTHONHOME='${usrDir.absolutePath}'; export PYTHONPATH='${usrLib.absolutePath}/python3.14'; export HOME='${context.filesDir.absolutePath}'; cd '$workspacePath' 2>/dev/null; $cmd"
                 RootHelper.executeRootCommand(fullCmd)
             }
             isShizuku -> {
@@ -611,11 +618,6 @@ class NativeProcessManager(
             }
             else -> {
                 try {
-                    val usrDir = File(context.filesDir, "usr")
-                    val usrBin = File(usrDir, "bin")
-                    val usrLib = File(usrDir, "lib")
-                    val binDir = File(context.filesDir, "bin")
-                    val nativeLibDir = File(context.applicationInfo.nativeLibraryDir)
                     val libBash = File(nativeLibDir, "libbash.so")
                     val bash = File(usrBin, "bash")
                     val shellExecutable = if (libBash.exists()) libBash.absolutePath else if (bash.exists() && bash.canExecute()) bash.absolutePath else "/system/bin/sh"
@@ -624,9 +626,11 @@ class NativeProcessManager(
                     pb.directory(File(workspacePath))
                     val env = pb.environment()
                     env["PATH"] = "${nativeLibDir.absolutePath}:${usrBin.absolutePath}:${binDir.absolutePath}:/system/bin:/system/xbin"
-                    env["LD_LIBRARY_PATH"] = "${nativeLibDir.absolutePath}:${usrLib.absolutePath}:/system/lib64"
+                    env["LD_LIBRARY_PATH"] = "${usrLib.absolutePath}:${nativeLibDir.absolutePath}:/system/lib64"
                     env["PREFIX"] = usrDir.absolutePath
                     env["TERMUX_PREFIX"] = usrDir.absolutePath
+                    env["PYTHONHOME"] = usrDir.absolutePath
+                    env["PYTHONPATH"] = "${usrLib.absolutePath}/python3.14"
                     env["HOME"] = context.filesDir.absolutePath
                     env["TMPDIR"] = File(context.cacheDir, "tmp").apply { mkdirs() }.absolutePath
                     env["SHELL"] = shellExecutable

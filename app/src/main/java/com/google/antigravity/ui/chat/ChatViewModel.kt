@@ -231,7 +231,9 @@ class ChatViewModel(
                     } else {
                         state.messages + incomingMsg
                     }
-                    persistCurrentMessages(updatedList)
+                    if (!incomingMsg.isStreaming) {
+                        persistCurrentMessages(updatedList)
+                    }
                     state.copy(
                         messages = updatedList,
                         isStreaming = incomingMsg.isStreaming
@@ -244,8 +246,20 @@ class ChatViewModel(
     private fun observeUsageStats() {
         viewModelScope.launch {
             repository.getUsageStats().collect { stats ->
-                _uiState.update { it.copy(usageStats = stats) }
+                val currentModel = _uiState.value.activeModel
+                val limit = getContextWindowForModel(currentModel)
+                _uiState.update { it.copy(usageStats = stats.copy(contextWindowLimit = limit)) }
             }
+        }
+    }
+
+    private fun getContextWindowForModel(modelName: String): Long {
+        val m = modelName.lowercase()
+        return when {
+            m.contains("gemini") -> 1_000_000L
+            m.contains("claude") -> 200_000L
+            m.contains("gpt") -> 128_000L
+            else -> 1_000_000L
         }
     }
 
@@ -263,7 +277,13 @@ class ChatViewModel(
     }
 
     fun selectModel(newModel: String) {
-        _uiState.update { it.copy(activeModel = newModel) }
+        val limit = getContextWindowForModel(newModel)
+        _uiState.update {
+            it.copy(
+                activeModel = newModel,
+                usageStats = it.usageStats.copy(contextWindowLimit = limit)
+            )
+        }
         initEngine()
     }
 

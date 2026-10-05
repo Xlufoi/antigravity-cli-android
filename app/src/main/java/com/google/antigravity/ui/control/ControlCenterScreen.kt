@@ -336,7 +336,57 @@ fun ControlCenterScreen(
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Icon(Icons.Default.QueryStats, contentDescription = null, tint = AgAccent, modifier = Modifier.size(20.dp))
                     Spacer(modifier = Modifier.width(8.dp))
-                    Text("Использование и лимиты токенов", color = AgTextPrimary, fontSize = 15.sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace)
+                    Text("Лимиты и квота токенов", color = AgTextPrimary, fontSize = 15.sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace)
+                }
+
+                // Remaining Context Window Card
+                Surface(
+                    shape = RoundedCornerShape(8.dp),
+                    color = AgSurfaceVariant,
+                    border = BorderStroke(1.dp, AgBorder),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text("ОСТАТОК КОНТЕКСТА", fontSize = 10.sp, fontFamily = FontFamily.Monospace, color = AgTextSecondary)
+                            Text(
+                                text = "${String.format(java.util.Locale.US, "%.1f", uiState.usageStats.remainingPercent)}% свободно",
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = AgAccent,
+                                fontFamily = FontFamily.Monospace
+                            )
+                        }
+
+                        LinearProgressIndicator(
+                            progress = { (uiState.usageStats.remainingContextTokens.toFloat() / uiState.usageStats.contextWindowLimit.toFloat()).coerceIn(0f, 1f) },
+                            modifier = Modifier.fillMaxWidth().height(6.dp).clip(RoundedCornerShape(3.dp)),
+                            color = AgAccent,
+                            trackColor = AgBorder
+                        )
+
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Text(
+                                text = "Осталось: ${String.format(java.util.Locale.US, "%,d", uiState.usageStats.remainingContextTokens).replace(',', ' ')} токенов",
+                                fontSize = 11.sp,
+                                fontFamily = FontFamily.Monospace,
+                                color = AgTextPrimary
+                            )
+                            Text(
+                                text = "из ${String.format(java.util.Locale.US, "%,d", uiState.usageStats.contextWindowLimit).replace(',', ' ')}",
+                                fontSize = 10.sp,
+                                fontFamily = FontFamily.Monospace,
+                                color = AgTextSecondary
+                            )
+                        }
+                    }
                 }
 
                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -345,7 +395,7 @@ fun ControlCenterScreen(
                         Column(modifier = Modifier.padding(10.dp)) {
                             Text("ПОСЛЕДНИЙ ЗАПРОС", fontSize = 9.sp, fontFamily = FontFamily.Monospace, color = AgTextSecondary)
                             Spacer(modifier = Modifier.height(4.dp))
-                            Text("${uiState.usageStats.lastTotalTokens}", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = AgTerminalPrompt, fontFamily = FontFamily.Monospace)
+                            Text("${String.format(java.util.Locale.US, "%,d", uiState.usageStats.lastTotalTokens).replace(',', ' ')}", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = AgTerminalPrompt, fontFamily = FontFamily.Monospace)
                             Text("in: ${uiState.usageStats.lastInputTokens} | out: ${uiState.usageStats.lastOutputTokens}", fontSize = 9.sp, color = AgTextSecondary)
                         }
                     }
@@ -355,17 +405,32 @@ fun ControlCenterScreen(
                         Column(modifier = Modifier.padding(10.dp)) {
                             Text("ВСЕГО ЗА СЕССИЮ", fontSize = 9.sp, fontFamily = FontFamily.Monospace, color = AgTextSecondary)
                             Spacer(modifier = Modifier.height(4.dp))
-                            Text("${uiState.usageStats.sessionTotalTokens}", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = AgAccent, fontFamily = FontFamily.Monospace)
+                            Text("${String.format(java.util.Locale.US, "%,d", uiState.usageStats.sessionTotalTokens).replace(',', ' ')}", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = AgAccent, fontFamily = FontFamily.Monospace)
                             Text("ходов: ${uiState.usageStats.turnsCount}", fontSize = 9.sp, color = AgTextSecondary)
                         }
                     }
                 }
 
-                Text(
-                    "Лимит контекста Gemini 3.8: 1 000 000 токенов (квота обновляется серверами Google).",
-                    color = AgTextSecondary,
-                    fontSize = 11.sp
-                )
+                Surface(
+                    shape = RoundedCornerShape(6.dp),
+                    color = AgDarkBackground,
+                    border = BorderStroke(1.dp, AgBorder),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(Icons.Default.CheckCircle, contentDescription = null, tint = AgAccent, modifier = Modifier.size(14.dp))
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text(
+                            text = "${uiState.usageStats.tierName} — безлимитная квота",
+                            color = AgTextSecondary,
+                            fontSize = 11.sp,
+                            fontFamily = FontFamily.Monospace
+                        )
+                    }
+                }
             }
         }
 

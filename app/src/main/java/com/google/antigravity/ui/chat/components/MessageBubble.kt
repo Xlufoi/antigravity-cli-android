@@ -107,7 +107,14 @@ fun MessageBubble(
                         lineHeight = 19.sp
                     )
                 } else if (message.isStreaming && !isUser) {
-                    TypingIndicatorDots()
+                    val cursorChar = if (cursorAlpha > 0.5f) "▌" else " "
+                    Text(
+                        text = cursorChar,
+                        color = AgAccent,
+                        fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
+                        fontSize = 16.sp,
+                        modifier = Modifier.padding(vertical = 2.dp)
+                    )
                 }
 
                 if (!extractedUrl.isNullOrBlank()) {
@@ -138,81 +145,6 @@ fun MessageBubble(
                 }
             }
         }
-    }
-}
-
-@Composable
-fun TypingIndicatorDots(modifier: Modifier = Modifier) {
-    val infiniteTransition = rememberInfiniteTransition(label = "dots")
-    val d1 by infiniteTransition.animateFloat(
-        initialValue = 0.3f, targetValue = 1f,
-        animationSpec = infiniteRepeatable(
-            animation = keyframes {
-                durationMillis = 1200
-                0.3f at 0
-                1.0f at 300
-                0.3f at 600
-                0.3f at 1200
-            },
-            repeatMode = RepeatMode.Restart
-        ), label = "d1"
-    )
-    val d2 by infiniteTransition.animateFloat(
-        initialValue = 0.3f, targetValue = 1f,
-        animationSpec = infiniteRepeatable(
-            animation = keyframes {
-                durationMillis = 1200
-                0.3f at 0
-                0.3f at 200
-                1.0f at 500
-                0.3f at 800
-                0.3f at 1200
-            },
-            repeatMode = RepeatMode.Restart
-        ), label = "d2"
-    )
-    val d3 by infiniteTransition.animateFloat(
-        initialValue = 0.3f, targetValue = 1f,
-        animationSpec = infiniteRepeatable(
-            animation = keyframes {
-                durationMillis = 1200
-                0.3f at 0
-                0.3f at 400
-                1.0f at 700
-                0.3f at 1000
-                0.3f at 1200
-            },
-            repeatMode = RepeatMode.Restart
-        ), label = "d3"
-    )
-
-    Row(
-        modifier = modifier.padding(vertical = 4.dp, horizontal = 2.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(5.dp)
-    ) {
-        Box(
-            modifier = Modifier
-                .size(8.dp)
-                .background(AgPrimary.copy(alpha = d1), CircleShape)
-        )
-        Box(
-            modifier = Modifier
-                .size(8.dp)
-                .background(AgPrimary.copy(alpha = d2), CircleShape)
-        )
-        Box(
-            modifier = Modifier
-                .size(8.dp)
-                .background(AgPrimary.copy(alpha = d3), CircleShape)
-        )
-        Spacer(modifier = Modifier.width(6.dp))
-        Text(
-            text = "Думает...",
-            color = AgTextSecondary,
-            fontSize = 13.sp,
-            fontStyle = FontStyle.Italic
-        )
     }
 }
 
