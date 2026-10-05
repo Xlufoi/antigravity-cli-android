@@ -3,6 +3,7 @@ package com.google.antigravity.ui.chat
 import android.widget.Toast
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -13,6 +14,7 @@ import androidx.compose.material.icons.filled.BugReport
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Key
 import androidx.compose.material.icons.filled.SaveAlt
+import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -41,12 +43,20 @@ fun ChatScreen(
     val coroutineScope = rememberCoroutineScope()
     var showAuthDialog by remember { mutableStateOf(false) }
     var showLogsDialog by remember { mutableStateOf(false) }
+    var showModelDialog by remember { mutableStateOf(false) }
     var tokenInput by remember { mutableStateOf("") }
 
     LaunchedEffect(uiState.messages.size) {
         if (uiState.messages.isNotEmpty()) {
-            coroutineScope.launch {
-                listState.animateScrollToItem(uiState.messages.size - 1)
+            listState.animateScrollToItem(uiState.messages.size - 1)
+        }
+    }
+
+    LaunchedEffect(uiState.messages.lastOrNull()?.text) {
+        if (uiState.messages.isNotEmpty()) {
+            val lastVisibleIndex = listState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0
+            if (lastVisibleIndex >= uiState.messages.size - 2) {
+                listState.scrollToItem(uiState.messages.size - 1)
             }
         }
     }
@@ -55,7 +65,7 @@ fun ChatScreen(
         topBar = {
             TopAppBar(
                 title = {
-                    Column {
+                    Column(modifier = Modifier.clickable { showModelDialog = true }) {
                         Text("Antigravity Mobile", fontSize = 18.sp, color = AgTextPrimary)
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Box(
@@ -79,6 +89,10 @@ fun ChatScreen(
                     containerColor = AgDarkBackground
                 ),
                 actions = {
+                    // Model Switcher Button
+                    IconButton(onClick = { showModelDialog = true }) {
+                        Icon(Icons.Default.Tune, contentDescription = "Select Model", tint = AgTextSecondary)
+                    }
                     // Logs Button
                     IconButton(onClick = { showLogsDialog = true }) {
                         Icon(Icons.Default.BugReport, contentDescription = "Logs", tint = AgTextSecondary)
@@ -240,6 +254,74 @@ fun ChatScreen(
             dismissButton = {
                 TextButton(onClick = { showAuthDialog = false }) {
                     Text("Отмена")
+                }
+            },
+            containerColor = AgSurfaceVariant
+        )
+    }
+
+    if (showModelDialog) {
+        val models = listOf(
+            "gemini-3.8-flash-low" to "Gemini 3.8 Flash (Low ⚡ Моментальный)",
+            "gemini-3.8-flash-medium" to "Gemini 3.8 Flash (Medium ⚖️ Баланс)",
+            "gemini-3.8-flash-high" to "Gemini 3.8 Flash (High 🧠 Мышление)",
+            "claude-sonnet-4-6" to "Claude Sonnet 4.6 (Claude 🎭)"
+        )
+
+        AlertDialog(
+            onDismissRequest = { showModelDialog = false },
+            title = { Text("Выбор модели", color = AgTextPrimary) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    models.forEach { (modelId, label) ->
+                        val isSelected = uiState.activeModel == modelId
+                        Surface(
+                            shape = RoundedCornerShape(8.dp),
+                            color = if (isSelected) AgPrimary.copy(alpha = 0.2f) else AgSurfaceVariant,
+                            border = androidx.compose.foundation.BorderStroke(
+                                1.dp,
+                                if (isSelected) AgPrimary else AgBorder
+                            ),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable {
+                                    viewModel.selectModel(modelId)
+                                    showModelDialog = false
+                                }
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(12.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                RadioButton(
+                                    selected = isSelected,
+                                    onClick = {
+                                        viewModel.selectModel(modelId)
+                                        showModelDialog = false
+                                    },
+                                    colors = RadioButtonDefaults.colors(selectedColor = AgPrimary)
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Column {
+                                    Text(
+                                        text = label,
+                                        fontSize = 13.sp,
+                                        color = if (isSelected) AgTextPrimary else AgTextSecondary
+                                    )
+                                    Text(
+                                        text = modelId,
+                                        fontSize = 11.sp,
+                                        color = AgTextSecondary.copy(alpha = 0.7f)
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { showModelDialog = false }) {
+                    Text("Закрыть")
                 }
             },
             containerColor = AgSurfaceVariant

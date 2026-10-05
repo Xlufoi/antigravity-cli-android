@@ -14,7 +14,7 @@ data class ChatUiState(
     val messages: List<ChatMessage> = emptyList(),
     val isStreaming: Boolean = false,
     val isEngineReady: Boolean = false,
-    val activeModel: String = "Gemini 3.8 Flash (High)",
+    val activeModel: String = "gemini-3.8-flash-low",
     val oauthToken: String = ""
 )
 
@@ -80,6 +80,11 @@ class ChatViewModel(
             initEngine()
         }
         return success
+    }
+
+    fun selectModel(newModel: String) {
+        _uiState.update { it.copy(activeModel = newModel) }
+        initEngine()
     }
 
     fun stopSession() {

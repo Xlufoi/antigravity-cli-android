@@ -62,6 +62,16 @@ class AgentRepositoryImpl(private val context: Context) : AgentRepository {
             val messageId = UUID.randomUUID().toString()
             var currentAgentMessage = ""
 
+            // Immediately emit streaming placeholder so user sees typing indicator instantly
+            _messagesFlow.emit(
+                ChatMessage(
+                    id = messageId,
+                    sender = MessageSender.AGENT,
+                    text = "",
+                    isStreaming = true
+                )
+            )
+
             manager.executePrompt(prompt).collect { event ->
                 when (event.type) {
                     "auth_url" -> {
@@ -126,7 +136,6 @@ class AgentRepositoryImpl(private val context: Context) : AgentRepository {
                                 isStreaming = false
                             )
                         )
-                        currentAgentMessage = ""
                     }
                 }
             }

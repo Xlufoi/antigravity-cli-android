@@ -23,7 +23,7 @@ import java.util.UUID
 class NativeProcessManager(
     private val context: Context,
     private val workspacePath: String = context.filesDir.absolutePath + "/workspace",
-    private val model: String = "Gemini 3.8 Flash (High)",
+    private val model: String = "gemini-3.8-flash-low",
     private val oauthToken: String? = null
 ) {
     private var currentProcess: Process? = null
@@ -85,18 +85,18 @@ class NativeProcessManager(
 
             // 3. Ensure settings.json exists
             val settingsFile = File(geminiDir, "settings.json")
-            if (!settingsFile.exists() || settingsFile.length() == 0L) {
+            if (!settingsFile.exists() || settingsFile.length() == 0L || settingsFile.readText().contains("High")) {
                 settingsFile.writeText(
                     """
                     {
-                      "model": "Gemini 3.8 Flash (High)",
+                      "model": "gemini-3.8-flash-low",
                       "trustedWorkspaces": [
                         "$workspacePath"
                       ]
                     }
                     """.trimIndent()
                 )
-                AppLogger.log(TAG, "Initialized default settings.json")
+                AppLogger.log(TAG, "Initialized default settings.json (gemini-3.8-flash-low)")
             }
 
             // 4. Create resolv.conf, hosts, and nsswitch.conf for glibc networking & localhost resolution
@@ -259,6 +259,12 @@ class NativeProcessManager(
             libDir.absolutePath
         ).joinToString(":")
 
+        val effortValue = when {
+            model.contains("high", ignoreCase = true) -> "high"
+            model.contains("medium", ignoreCase = true) -> "medium"
+            else -> "low"
+        }
+
         val command = listOf(
             nativeLd.absolutePath,
             "--library-path", libraryPaths,
@@ -267,6 +273,7 @@ class NativeProcessManager(
             "--continue",
             "--output-format", "stream-json",
             "--model", model,
+            "--effort", effortValue,
             "--dangerously-skip-permissions",
             "--add-dir", workspaceDir.absolutePath
         )
@@ -289,6 +296,14 @@ class NativeProcessManager(
         env["PWD"] = workspaceDir.absolutePath
         val tmpDir = File(context.cacheDir, "tmp").apply { mkdirs() }
         env["TMPDIR"] = tmpDir.absolutePath
+
+        var doneEmitted = false
+        fun emitDone() {
+            if (!doneEmitted) {
+                doneEmitted = true
+                trySend(AgpStreamMessage(type = "done"))
+            }
+        }
 
         try {
             val proc = pb.start()
@@ -344,7 +359,7 @@ class NativeProcessManager(
                             if (!resText.isNullOrBlank()) {
                                 send(AgpStreamMessage(type = "final", text = resText))
                             }
-                            send(AgpStreamMessage(type = "done"))
+                            emitDone()
                         }
                         else -> {
                             if (l.contains("https://accounts.google.com") || (l.contains("https://") && l.contains("oauth"))) {
@@ -365,12 +380,12 @@ class NativeProcessManager(
 
             proc.waitFor()
             try { errThread.join(500) } catch (_: Exception) {}
-            send(AgpStreamMessage(type = "done"))
+            emitDone()
             AppLogger.log(TAG, "Turn completed with exit code: ${proc.exitValue()}")
         } catch (e: Exception) {
             AppLogger.log(TAG, "Execution failed: ${e.message}\n${e.stackTraceToString()}")
             send(AgpStreamMessage(type = "chunk", text = "Ошибка выполнения: ${e.localizedMessage}"))
-            send(AgpStreamMessage(type = "done"))
+            emitDone()
         } finally {
             currentProcess = null
         }
