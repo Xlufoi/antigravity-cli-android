@@ -201,8 +201,9 @@ class AgentRepositoryImpl(private val context: Context) : AgentRepository {
 
     override val chatHistoryManager: ChatHistoryManager by lazy { ChatHistoryManager(context) }
 
-    override fun submitAuthCode(code: String): Boolean {
-        return processManager?.submitAuthCode(code) ?: false
+    override suspend fun submitAuthCode(code: String): Boolean {
+        val manager = processManager ?: NativeProcessManager(context = context)
+        return manager.submitAuthCode(code)
     }
 
     override fun executeShellCommand(cmd: String, isRoot: Boolean, isShizuku: Boolean): String {

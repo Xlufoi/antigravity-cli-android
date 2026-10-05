@@ -97,7 +97,7 @@ fun OAuthWebViewDialog(
                         WebView(context).apply {
                             settings.javaScriptEnabled = true
                             settings.domStorageEnabled = true
-                            settings.userAgentString = settings.userAgentString + " Chrome/120.0.0.0 Mobile"
+                            settings.userAgentString = "Mozilla/5.0 (Linux; Android 14; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Mobile Safari/537.36"
                             webViewClient = object : WebViewClient() {
                                 override fun onPageStarted(view: WebView?, url: String?, favicon: Bitmap?) {
                                     super.onPageStarted(view, url, favicon)
@@ -140,7 +140,9 @@ fun OAuthWebViewDialog(
 private fun checkUrlForAuthCode(url: String, onAuthCodeReceived: (String) -> Unit): Boolean {
     if (url.contains("antigravity.google/oauth-callback") || url.contains("code=")) {
         val uri = Uri.parse(url)
-        val code = uri.getQueryParameter("code")
+        val code = uri.getQueryParameter("code") ?: if (url.contains("code=")) {
+            url.substringAfter("code=").substringBefore("&").substringBefore(" ")
+        } else null
         if (!code.isNullOrBlank()) {
             onAuthCodeReceived(code)
             return true

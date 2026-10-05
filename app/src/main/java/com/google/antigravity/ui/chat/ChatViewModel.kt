@@ -298,16 +298,16 @@ class ChatViewModel(
         _uiState.update { it.copy(showOAuthWebView = false) }
     }
 
-    fun submitAuthCode(code: String): Boolean {
-        val success = repository.submitAuthCode(code)
-        if (success) {
-            viewModelScope.launch {
+    fun submitAuthCode(code: String, onComplete: ((Boolean) -> Unit)? = null) {
+        viewModelScope.launch {
+            val success = repository.submitAuthCode(code)
+            if (success) {
                 loadAccounts()
                 initEngine()
                 _uiState.update { it.copy(showOAuthWebView = false, generatedAuthUrl = null) }
             }
+            onComplete?.invoke(success)
         }
-        return success
     }
 
     fun loadAccounts() {

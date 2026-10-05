@@ -19,6 +19,7 @@ import java.io.BufferedReader
 import java.io.File
 import java.io.InputStreamReader
 import java.util.UUID
+import org.json.JSONObject
 
 class NativeProcessManager(
     private val context: Context,
@@ -310,14 +311,22 @@ class NativeProcessManager(
         val tmpDir = File(context.cacheDir, "tmp").apply { mkdirs() }
         env["TMPDIR"] = tmpDir.absolutePath
 
-        // Set up sandbox Linux and Termux paths
+        // Set up embedded isolated Termux sandbox paths
+        val usrDir = File(context.filesDir, "usr")
+        val usrBin = File(usrDir, "bin")
+        val usrLib = File(usrDir, "lib")
         val binDir = File(context.filesDir, "bin")
-        val termuxBin = "/data/data/com.termux/files/usr/bin"
         val systemBin = "/system/bin:/system/xbin:/product/bin:/apex/com.android.runtime/bin"
-        env["PATH"] = "${binDir.absolutePath}:$termuxBin:$systemBin"
-        env["SHELL"] = if (File(binDir, "bash").exists()) File(binDir, "bash").absolutePath else "/system/bin/sh"
-        env["PREFIX"] = context.filesDir.absolutePath
-        env["TERMUX_PREFIX"] = "/data/data/com.termux/files/usr"
+        val systemLib = "/system/lib64"
+
+        env["PATH"] = "${usrBin.absolutePath}:${binDir.absolutePath}:$systemBin"
+        env["LD_LIBRARY_PATH"] = "${usrLib.absolutePath}:$systemLib"
+        val bashFile = File(usrBin, "bash")
+        env["SHELL"] = if (bashFile.exists() && bashFile.canExecute()) bashFile.absolutePath else "/system/bin/sh"
+        env["PREFIX"] = usrDir.absolutePath
+        env["TERMUX_PREFIX"] = usrDir.absolutePath
+        env["CURL_CA_BUNDLE"] = caCertFile.absolutePath
+        env["GIT_SSL_CAINFO"] = caCertFile.absolutePath
 
         var doneEmitted = false
         fun emitDone() {
@@ -535,124 +544,44 @@ class NativeProcessManager(
         }
     }
 
-    private var currentAuthProcess: Process? = null
-
-    fun generateAuthUrl(): Flow<String> = channelFlow {
-        val engineDir = File(context.filesDir, "engine")
-        val agyBinary = File(engineDir, "agy.va39")
-        val nativeLibDir = File(context.applicationInfo.nativeLibraryDir)
-        val nativeLd = File(nativeLibDir, "libld.so")
-        val libDir = File(engineDir, "lib")
-        val caCertFile = File(context.filesDir, "cacert.pem")
-        val geminiDir = File(context.filesDir, ".gemini/antigravity-cli").apply { mkdirs() }
-
-        // Temporarily backup existing token so agy initiates a new login flow
-        val tokenFile = File(geminiDir, "antigravity-oauth-token")
-        val tokenBackup = File(geminiDir, "antigravity-oauth-token.bak")
-        if (tokenFile.exists()) {
-            try {
-                tokenFile.copyTo(tokenBackup, overwrite = true)
-                tokenFile.delete()
-            } catch (_: Exception) {}
-        }
-
-        val libraryPaths = listOf(nativeLibDir.absolutePath, libDir.absolutePath).joinToString(":")
-        val command = listOf(
-            nativeLd.absolutePath,
-            "--library-path", libraryPaths,
-            agyBinary.absolutePath,
-            "-p", "login_trigger"
-        )
-
-        AppLogger.log(TAG, "Triggering login URL generation...")
-        val pb = ProcessBuilder(command)
-        val env = pb.environment()
-        env["HOME"] = context.filesDir.absolutePath
-        env["ANTIGRAVITY_APP_DATA_DIR"] = geminiDir.absolutePath
-        env["SSL_CERT_FILE"] = caCertFile.absolutePath
-        env["TERM"] = "xterm-256color"
-        env["GODEBUG"] = "netdns=cgo"
-        env["RES_OPTIONS"] = "timeout:2 attempts:3"
-        val binDir = File(context.filesDir, "bin")
-        env["PATH"] = "${binDir.absolutePath}:/data/data/com.termux/files/usr/bin:/system/bin:/system/xbin"
-
-        try {
-            val proc = pb.start()
-            currentAuthProcess = proc
-            val errReader = BufferedReader(InputStreamReader(proc.errorStream))
-            val outReader = BufferedReader(InputStreamReader(proc.inputStream))
-
-            val errThread = Thread {
-                try {
-                    errReader.forEachLine { line ->
-                        AppLogger.log(TAG, "AUTH STDERR: $line")
-                        if (line.contains("https://accounts.google.com/o/oauth2/auth") || (line.contains("https://") && line.contains("oauth"))) {
-                            val start = line.indexOf("https://")
-                            val url = line.substring(start).trim()
-                            trySend(url)
-                        }
-                    }
-                } catch (_: Exception) {}
-            }
-            errThread.start()
-
-            val outThread = Thread {
-                try {
-                    outReader.forEachLine { line ->
-                        AppLogger.log(TAG, "AUTH STDOUT: $line")
-                        if (line.contains("https://accounts.google.com/o/oauth2/auth") || (line.contains("https://") && line.contains("oauth"))) {
-                            val start = line.indexOf("https://")
-                            val url = line.substring(start).trim()
-                            trySend(url)
-                        }
-                    }
-                } catch (_: Exception) {}
-            }
-            outThread.start()
-
-            // Wait up to 120 seconds for the user to complete login in browser
-            proc.waitFor(120, java.util.concurrent.TimeUnit.SECONDS)
-
-            // If login completed and new token exists, clean up backup
-            if (tokenFile.exists() && tokenFile.length() > 0L) {
-                tokenBackup.delete()
-                AppLogger.log(TAG, "OAuth token successfully created via browser login!")
-            } else if (tokenBackup.exists()) {
-                tokenBackup.copyTo(tokenFile, overwrite = true)
-                tokenBackup.delete()
-            }
-        } catch (e: Exception) {
-            AppLogger.log(TAG, "Auth generation error: ${e.message}")
-            if (tokenBackup.exists() && !tokenFile.exists()) {
-                tokenBackup.copyTo(tokenFile, overwrite = true)
-                tokenBackup.delete()
-            }
-        } finally {
-            currentAuthProcess = null
-        }
+    fun generateAuthUrl(): Flow<String> = flow {
+        val url = OAuthClient.createAuthUrl(context)
+        emit(url)
     }.flowOn(Dispatchers.IO)
 
-    fun submitAuthCode(input: String): Boolean {
-        return try {
-            val code = if (input.contains("code=")) {
-                val uri = Uri.parse(input)
-                uri.getQueryParameter("code") ?: input.substringAfter("code=").substringBefore("&")
-            } else {
-                input.trim()
+    suspend fun submitAuthCode(input: String): Boolean = withContext(Dispatchers.IO) {
+        val trimmed = input.trim()
+        if (trimmed.isBlank()) return@withContext false
+
+        // 1. If user provided a raw JSON token
+        if (trimmed.startsWith("{") || trimmed.contains("access_token") || trimmed.contains("refresh_token")) {
+            val saved = saveToken(trimmed)
+            if (saved) {
+                AccountManager(context).saveAccount("Основной токен", trimmed, makeActive = true)
             }
-            val proc = currentAuthProcess
-            if (proc != null && proc.isAlive) {
-                AppLogger.log(TAG, "Piping auth code to process stdin...")
-                proc.outputStream.write((code + "\n").toByteArray())
-                proc.outputStream.flush()
-                true
-            } else {
-                AppLogger.log(TAG, "Cannot submit code: auth process is not active")
-                false
+            return@withContext saved
+        }
+
+        // 2. Perform OAuth PKCE token exchange with Google
+        val result = OAuthClient.exchangeCodeForToken(context, trimmed)
+        if (result.isSuccess) {
+            val tokenJson = result.getOrThrow()
+            val saved = saveToken(tokenJson)
+            if (saved) {
+                val email = try {
+                    val obj = JSONObject(tokenJson)
+                    val idToken = obj.optString("id_token")
+                    if (idToken.isNotBlank()) OAuthClient.extractEmailFromIdToken(idToken) else null
+                } catch (_: Exception) { null }
+                val accountName = email ?: "Google Account (${System.currentTimeMillis() % 1000})"
+                AccountManager(context).saveAccount(accountName, tokenJson, makeActive = true)
+                AppLogger.log(TAG, "OAuth authorization successfully completed for $accountName!")
             }
-        } catch (e: Exception) {
-            AppLogger.log(TAG, "Error submitting auth code: ${e.message}")
-            false
+            return@withContext saved
+        } else {
+            val errMsg = result.exceptionOrNull()?.message ?: "Неизвестная ошибка обмена кода"
+            AppLogger.log(TAG, "OAuth code exchange failed: $errMsg")
+            return@withContext false
         }
     }
 
@@ -667,20 +596,36 @@ class NativeProcessManager(
             }
             else -> {
                 try {
+                    val usrDir = File(context.filesDir, "usr")
+                    val usrBin = File(usrDir, "bin")
+                    val usrLib = File(usrDir, "lib")
                     val binDir = File(context.filesDir, "bin")
-                    val pb = ProcessBuilder("/system/bin/sh", "-c", cmd)
+                    val bash = File(usrBin, "bash")
+                    val shellExecutable = if (bash.exists() && bash.canExecute()) bash.absolutePath else "/system/bin/sh"
+
+                    val pb = ProcessBuilder(shellExecutable, "-c", cmd)
                     pb.directory(File(workspacePath))
                     val env = pb.environment()
-                    env["PATH"] = "${binDir.absolutePath}:/data/data/com.termux/files/usr/bin:/system/bin:/system/xbin"
+                    env["PATH"] = "${usrBin.absolutePath}:${binDir.absolutePath}:/system/bin:/system/xbin"
+                    env["LD_LIBRARY_PATH"] = "${usrLib.absolutePath}:/system/lib64"
+                    env["PREFIX"] = usrDir.absolutePath
+                    env["TERMUX_PREFIX"] = usrDir.absolutePath
                     env["HOME"] = context.filesDir.absolutePath
-                    env["SHELL"] = "/system/bin/sh"
+                    env["TMPDIR"] = File(context.cacheDir, "tmp").apply { mkdirs() }.absolutePath
+                    env["SHELL"] = shellExecutable
+                    env["SSL_CERT_FILE"] = File(context.filesDir, "cacert.pem").absolutePath
+                    env["CURL_CA_BUNDLE"] = File(context.filesDir, "cacert.pem").absolutePath
+                    env["GIT_SSL_CAINFO"] = File(context.filesDir, "cacert.pem").absolutePath
+                    env["TERM"] = "xterm-256color"
+                    env["LANG"] = "en_US.UTF-8"
+
                     val proc = pb.start()
                     val output = proc.inputStream.bufferedReader().use { it.readText() }
                     val error = proc.errorStream.bufferedReader().use { it.readText() }
                     proc.waitFor()
                     if (output.isNotBlank()) output.trim() else if (error.isNotBlank()) error.trim() else "Команда выполнена успешно (вывод пуст)"
                 } catch (e: Exception) {
-                    "Ошибка песочницы: ${e.message}"
+                    "Ошибка песочницы Termux: ${e.message}"
                 }
             }
         }

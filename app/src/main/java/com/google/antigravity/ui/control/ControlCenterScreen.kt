@@ -51,9 +51,12 @@ fun ControlCenterScreen(
         OAuthWebViewDialog(
             authUrl = uiState.generatedAuthUrl,
             onAuthCodeReceived = { code ->
-                val ok = viewModel.submitAuthCode(code)
-                if (ok) {
-                    Toast.makeText(context, "Авторизация успешно завершена!", Toast.LENGTH_LONG).show()
+                viewModel.submitAuthCode(code) { ok ->
+                    if (ok) {
+                        Toast.makeText(context, "Авторизация успешно завершена!", Toast.LENGTH_LONG).show()
+                    } else {
+                        Toast.makeText(context, "Не удалось завершить авторизацию", Toast.LENGTH_LONG).show()
+                    }
                 }
             },
             onDismiss = { viewModel.closeOAuthWebView() }
@@ -197,12 +200,13 @@ fun ControlCenterScreen(
                                     viewModel.saveAccount("Основной токен", input)
                                     Toast.makeText(context, "Токен сохранён и активирован!", Toast.LENGTH_SHORT).show()
                                 } else {
-                                    val submitted = viewModel.submitAuthCode(input)
-                                    if (submitted) {
-                                        Toast.makeText(context, "Код отправлен! Авторизация завершается...", Toast.LENGTH_LONG).show()
-                                    } else {
-                                        viewModel.saveAccount("Основной токен", input)
-                                        Toast.makeText(context, "Код сохранён как токен", Toast.LENGTH_SHORT).show()
+                                    Toast.makeText(context, "Выполняется вход через Google...", Toast.LENGTH_SHORT).show()
+                                    viewModel.submitAuthCode(input) { success ->
+                                        if (success) {
+                                            Toast.makeText(context, "Успешная авторизация Google!", Toast.LENGTH_LONG).show()
+                                        } else {
+                                            Toast.makeText(context, "Не удалось обменять код на токен. Попробуйте сгенерировать ссылку заново.", Toast.LENGTH_LONG).show()
+                                        }
                                     }
                                 }
                                 tokenInput = ""
