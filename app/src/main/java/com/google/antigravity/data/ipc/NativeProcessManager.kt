@@ -286,6 +286,9 @@ class NativeProcessManager(
         // Force Go to use CGO resolver which calls getaddrinfo in patched libc.so.6
         env["GODEBUG"] = "netdns=cgo"
         env["RES_OPTIONS"] = "timeout:2 attempts:3"
+        env["PWD"] = workspaceDir.absolutePath
+        val tmpDir = File(context.cacheDir, "tmp").apply { mkdirs() }
+        env["TMPDIR"] = tmpDir.absolutePath
 
         try {
             val proc = pb.start()
@@ -328,12 +331,19 @@ class NativeProcessManager(
 
                             if (textDelta != null) {
                                 send(AgpStreamMessage(type = "chunk", text = textDelta))
-                            }
-                            if (state == "DONE" && stepType == "agent_response") {
-                                send(AgpStreamMessage(type = "done"))
+                            } else if (stepType == "tool") {
+                                val toolName = stepUpdate?.get("tool_name")?.jsonPrimitive?.content ?: "инструмент"
+                                if (state == "ACTIVE") {
+                                    send(AgpStreamMessage(type = "tool_start", text = "🔧 Выполняется: $toolName..."))
+                                }
                             }
                         }
                         "result" -> {
+                            val resultObj = rootObj["result"]?.jsonObject
+                            val resText = resultObj?.get("response")?.jsonPrimitive?.content
+                            if (!resText.isNullOrBlank()) {
+                                send(AgpStreamMessage(type = "final", text = resText))
+                            }
                             send(AgpStreamMessage(type = "done"))
                         }
                         else -> {

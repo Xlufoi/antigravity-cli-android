@@ -87,6 +87,36 @@ class AgentRepositoryImpl(private val context: Context) : AgentRepository {
                             )
                         }
                     }
+                    "tool_start" -> {
+                        event.text?.let { toolStatus ->
+                            val displayText = if (currentAgentMessage.isNotBlank()) {
+                                "$currentAgentMessage\n\n_$toolStatus_"
+                            } else {
+                                "_$toolStatus_"
+                            }
+                            _messagesFlow.emit(
+                                ChatMessage(
+                                    id = messageId,
+                                    sender = MessageSender.AGENT,
+                                    text = displayText,
+                                    isStreaming = true
+                                )
+                            )
+                        }
+                    }
+                    "final" -> {
+                        event.text?.let { fullText ->
+                            currentAgentMessage = fullText
+                            _messagesFlow.emit(
+                                ChatMessage(
+                                    id = messageId,
+                                    sender = MessageSender.AGENT,
+                                    text = currentAgentMessage,
+                                    isStreaming = true
+                                )
+                            )
+                        }
+                    }
                     "done" -> {
                         _messagesFlow.emit(
                             ChatMessage(
