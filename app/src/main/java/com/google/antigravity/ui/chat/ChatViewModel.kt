@@ -58,7 +58,14 @@ data class ChatUiState(
     val usageStats: UsageStats = UsageStats(),
     val quotaSummary: UserQuotaSummary = UserQuotaSummary(),
     val isSyncingQuota: Boolean = false,
-    val liveLogs: List<String> = emptyList()
+    val liveLogs: List<String> = emptyList(),
+    // DNS & Proxy (DNS&PROXY)
+    val dnsPreset: com.google.antigravity.data.ipc.DnsPreset = com.google.antigravity.data.ipc.DnsPreset.SYSTEM,
+    val customDnsIp: String = "",
+    val isProxyEnabled: Boolean = false,
+    val proxyUrl: String = "http://127.0.0.1:8080",
+    val appliedDnsList: List<String> = emptyList(),
+    val isOnboardingCompleted: Boolean = false
 )
 
 class ChatViewModel(
@@ -77,6 +84,7 @@ class ChatViewModel(
         loadAccounts()
         checkSystemPrivileges()
         loadSessions()
+        loadNetworkConfig()
         initEngine()
         syncQuota()
     }
@@ -531,5 +539,61 @@ class ChatViewModel(
         viewModelScope.launch {
             repository.sendMessage(userPrompt)
         }
+    }
+
+    // --- DNS & HTTP Proxy & Onboarding Configuration ---
+    fun loadNetworkConfig() {
+        val net = repository.networkConfigManager
+        _uiState.update {
+            it.copy(
+                dnsPreset = net.selectedPreset,
+                customDnsIp = net.customDnsIp,
+                isProxyEnabled = net.isProxyEnabled,
+                proxyUrl = net.proxyUrl,
+                isOnboardingCompleted = net.isOnboardingCompleted
+            )
+        }
+    }
+
+    fun setDnsPreset(preset: com.google.antigravity.data.ipc.DnsPreset) {
+        repository.networkConfigManager.selectedPreset = preset
+        val dnsList = repository.applyDnsConfig()
+        _uiState.update {
+            it.copy(
+                dnsPreset = preset,
+                appliedDnsList = dnsList
+            )
+        }
+    }
+
+    fun setCustomDnsIp(ip: String) {
+        repository.networkConfigManager.customDnsIp = ip.trim()
+        _uiState.update { it.copy(customDnsIp = ip.trim()) }
+    }
+
+    fun applyCustomDns() {
+        val dnsList = repository.applyDnsConfig()
+        _uiState.update { it.copy(appliedDnsList = dnsList) }
+    }
+
+    fun setProxyConfig(enabled: Boolean, url: String) {
+        repository.networkConfigManager.isProxyEnabled = enabled
+        repository.networkConfigManager.proxyUrl = url.trim()
+        _uiState.update {
+            it.copy(
+                isProxyEnabled = enabled,
+                proxyUrl = url.trim()
+            )
+        }
+    }
+
+    fun completeOnboarding() {
+        repository.networkConfigManager.isOnboardingCompleted = true
+        _uiState.update { it.copy(isOnboardingCompleted = true) }
+    }
+
+    fun reopenOnboarding() {
+        repository.networkConfigManager.isOnboardingCompleted = false
+        _uiState.update { it.copy(isOnboardingCompleted = false) }
     }
 }

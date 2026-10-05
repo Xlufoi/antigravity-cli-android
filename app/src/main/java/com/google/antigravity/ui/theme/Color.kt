@@ -15,13 +15,13 @@ val AgTextSecondary = Color(0xFF888888)
 val AgTerminalDim = Color(0xFF555555)
 
 // Console accents
-val AgPrimary = Color(0xFF2F81F7)       // Console Blue (Darker rich terminal blue)
+val AgPrimary = Color(0xFF4863FF)       // Rich electric blue with a subtle violet tint
 val AgSecondary = Color(0xFF888888)     // Neutral Gray
 val AgAccent = Color(0xFF00E676)        // Console Green
 val AgError = Color(0xFFF85149)         // Console Red
 
 // Terminal specific highlights
-val AgTerminalPrompt = Color(0xFF2F81F7) // Prompt blue
+val AgTerminalPrompt = Color(0xFF4863FF) // Prompt blue with subtle violet undertone
 val AgTerminalGreen = Color(0xFF00E676)  // Success / Active green
 val AgTerminalAmber = Color(0xFFD29922)  // Warning / Limit yellow
 val AgTerminalPurple = Color(0xFFA371F7) // Purple

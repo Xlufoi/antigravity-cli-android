@@ -27,6 +27,7 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.google.antigravity.data.ipc.DnsPreset
 import com.google.antigravity.ui.chat.ChatUiState
 import com.google.antigravity.ui.chat.ChatViewModel
 import com.google.antigravity.ui.chat.components.WorkspacePickerDialog
@@ -36,7 +37,8 @@ enum class SettingsSubTab {
     MENU,
     ACCOUNTS,
     HISTORY,
-    ADVANCED
+    ADVANCED,
+    DNS_PROXY
 }
 
 @Composable
@@ -106,6 +108,7 @@ fun ControlCenterScreen(
                         SettingsSubTab.ACCOUNTS -> "ACCOUNTS & QUOTA"
                         SettingsSubTab.HISTORY -> "CHAT HISTORY"
                         SettingsSubTab.ADVANCED -> "ADVANCED SETTINGS"
+                        SettingsSubTab.DNS_PROXY -> "DNS & PROXY"
                         else -> "SETTINGS"
                     },
                     color = AgTextPrimary,
@@ -155,7 +158,14 @@ fun ControlCenterScreen(
                         AdvancedTabContent(
                             viewModel = viewModel,
                             uiState = uiState,
-                            onOpenWorkspaceDialog = { showWorkspaceDialog = true }
+                            onOpenWorkspaceDialog = { showWorkspaceDialog = true },
+                            onCloseSettings = onCloseSettings
+                        )
+                    }
+                    SettingsSubTab.DNS_PROXY -> {
+                        DnsProxyTabContent(
+                            viewModel = viewModel,
+                            uiState = uiState
                         )
                     }
                     SettingsSubTab.MENU -> {}
@@ -239,6 +249,13 @@ private fun SettingsMenuList(
             title = "ADVANCED SETTINGS",
             subtitle = "Root access, ADB / Shizuku privileges, workspace permissions & live system logs",
             onClick = { onSelectTab(SettingsSubTab.ADVANCED) }
+        )
+
+        SettingsCategoryCard(
+            index = "4",
+            title = "DNS & PROXY",
+            subtitle = "Smart DNS resolvers (dns-ai.ru, xbox-dns, system/VPN) and HTTP proxy gateway",
+            onClick = { onSelectTab(SettingsSubTab.DNS_PROXY) }
         )
 
         Spacer(modifier = Modifier.height(16.dp))
@@ -720,7 +737,8 @@ private fun HistoryTabContent(
 private fun AdvancedTabContent(
     viewModel: ChatViewModel,
     uiState: ChatUiState,
-    onOpenWorkspaceDialog: () -> Unit
+    onOpenWorkspaceDialog: () -> Unit,
+    onCloseSettings: () -> Unit = {}
 ) {
     val context = LocalContext.current
 
@@ -866,7 +884,48 @@ private fun AdvancedTabContent(
 
     HorizontalDivider(color = AgSeparator, thickness = 1.dp)
 
-    // 6. SYSTEM & ENGINE LOGGING
+    // 6. INITIAL SETUP WIZARD
+    SectionHeader("INITIAL SETUP & ONBOARDING")
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .border(1.dp, AgBorder)
+            .padding(10.dp),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = "Re-run Initial Setup Wizard",
+                color = AgTextPrimary,
+                fontFamily = FontFamily.Monospace,
+                fontSize = 12.sp,
+                fontWeight = FontWeight.Bold
+            )
+            Text(
+                text = "Access onboarding screen with account and storage checks",
+                color = AgTextSecondary,
+                fontFamily = FontFamily.Monospace,
+                fontSize = 10.sp
+            )
+        }
+
+        OutlinedButton(
+            onClick = {
+                viewModel.reopenOnboarding()
+                onCloseSettings()
+            },
+            border = BorderStroke(1.dp, AgTerminalPrompt),
+            shape = RoundedCornerShape(2.dp),
+            colors = ButtonDefaults.outlinedButtonColors(contentColor = AgTerminalPrompt)
+        ) {
+            Text("[RUN SETUP]", fontFamily = FontFamily.Monospace, fontSize = 11.sp)
+        }
+    }
+
+    HorizontalDivider(color = AgSeparator, thickness = 1.dp)
+
+    // 7. SYSTEM & ENGINE LOGGING
     Row(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.SpaceBetween,
@@ -941,6 +1000,272 @@ private fun AdvancedTabContent(
                         lineHeight = 14.sp
                     )
                 }
+            }
+        }
+    }
+}
+
+@Composable
+private fun DnsProxyTabContent(
+    viewModel: ChatViewModel,
+    uiState: ChatUiState
+) {
+    val context = LocalContext.current
+    var customDnsInput by remember(uiState.customDnsIp) { mutableStateOf(uiState.customDnsIp) }
+    var proxyUrlInput by remember(uiState.proxyUrl) { mutableStateOf(uiState.proxyUrl) }
+
+    // --- SECTION 1: DNS RESOLVER ---
+    SectionHeader("SMART DNS RESOLVERS (ДНС СЕРВЕРЫ)")
+    Text(
+        text = "Select custom DNS resolver for unblocking AI services (ChatGPT, Claude, Gemini) or use system:",
+        color = AgTextSecondary,
+        fontFamily = FontFamily.Monospace,
+        fontSize = 11.sp
+    )
+
+    DnsPreset.values().forEach { preset ->
+        val isSelected = uiState.dnsPreset == preset
+        Surface(
+            shape = RoundedCornerShape(2.dp),
+            color = Color.Black,
+            border = BorderStroke(1.dp, if (isSelected) AgTerminalPrompt else AgBorder),
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable { viewModel.setDnsPreset(preset) }
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(10.dp),
+                verticalArrangement = Arrangement.spacedBy(4.dp)
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "> ${preset.title}",
+                        color = if (isSelected) AgTerminalPrompt else AgTextPrimary,
+                        fontFamily = FontFamily.Monospace,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 12.sp
+                    )
+                    Text(
+                        text = if (isSelected) "[ACTIVE]" else "[SELECT]",
+                        color = if (isSelected) AgTerminalGreen else AgTextSecondary,
+                        fontFamily = FontFamily.Monospace,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 11.sp
+                    )
+                }
+
+                Text(
+                    text = "  ${preset.description}",
+                    color = AgTextSecondary,
+                    fontFamily = FontFamily.Monospace,
+                    fontSize = 10.sp
+                )
+
+                if (preset.primaryIp.isNotBlank()) {
+                    Text(
+                        text = "  IPv4: ${preset.primaryIp} ${preset.secondaryIp}",
+                        color = AgTerminalDim,
+                        fontFamily = FontFamily.Monospace,
+                        fontSize = 10.sp
+                    )
+                }
+            }
+        }
+    }
+
+    if (uiState.dnsPreset == DnsPreset.CUSTOM) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .border(1.dp, AgTerminalPrompt)
+                .padding(8.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
+            Text(
+                text = "Enter Custom DNS IP:",
+                color = AgTerminalPrompt,
+                fontFamily = FontFamily.Monospace,
+                fontSize = 11.sp
+            )
+            TextField(
+                value = customDnsInput,
+                onValueChange = {
+                    customDnsInput = it
+                    viewModel.setCustomDnsIp(it)
+                },
+                placeholder = { Text("e.g. 192.168.1.1", color = AgTerminalDim, fontSize = 11.sp, fontFamily = FontFamily.Monospace) },
+                colors = TextFieldDefaults.colors(
+                    focusedContainerColor = AgSurfaceVariant,
+                    unfocusedContainerColor = AgSurfaceVariant,
+                    focusedTextColor = AgTextPrimary,
+                    unfocusedTextColor = AgTextPrimary,
+                    focusedIndicatorColor = AgTerminalPrompt,
+                    unfocusedIndicatorColor = AgBorder
+                ),
+                textStyle = LocalTextStyle.current.copy(fontFamily = FontFamily.Monospace, fontSize = 11.sp),
+                modifier = Modifier.fillMaxWidth()
+            )
+            OutlinedButton(
+                onClick = {
+                    viewModel.applyCustomDns()
+                    Toast.makeText(context, "Custom DNS applied!", Toast.LENGTH_SHORT).show()
+                },
+                border = BorderStroke(1.dp, AgTerminalPrompt),
+                shape = RoundedCornerShape(2.dp),
+                colors = ButtonDefaults.outlinedButtonColors(contentColor = AgTerminalPrompt)
+            ) {
+                Text("[APPLY CUSTOM DNS]", fontFamily = FontFamily.Monospace, fontSize = 11.sp)
+            }
+        }
+    }
+
+    HorizontalDivider(color = AgSeparator, thickness = 1.dp)
+
+    // --- SECTION 2: HTTP PROXY ---
+    SectionHeader("HTTP PROXY GATEWAY (ПРОКСИ СЕРВЕР)")
+    Text(
+        text = "HTTP proxy gateway for CLI commands (curl, pip, git), network sockets, and AI requests. Default is disabled.",
+        color = AgTextSecondary,
+        fontFamily = FontFamily.Monospace,
+        fontSize = 11.sp
+    )
+
+    Surface(
+        shape = RoundedCornerShape(2.dp),
+        color = Color.Black,
+        border = BorderStroke(1.dp, if (uiState.isProxyEnabled) AgTerminalGreen else AgBorder),
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(10.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = "Proxy Status",
+                        color = AgTextPrimary,
+                        fontFamily = FontFamily.Monospace,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 12.sp
+                    )
+                    Text(
+                        text = if (uiState.isProxyEnabled) "ACTIVE -> ${uiState.proxyUrl}" else "DISABLED (Direct Connection)",
+                        color = if (uiState.isProxyEnabled) AgTerminalGreen else AgTerminalAmber,
+                        fontFamily = FontFamily.Monospace,
+                        fontSize = 10.sp
+                    )
+                }
+
+                OutlinedButton(
+                    onClick = {
+                        val next = !uiState.isProxyEnabled
+                        viewModel.setProxyConfig(next, proxyUrlInput)
+                        Toast.makeText(context, if (next) "Proxy enabled" else "Proxy disabled", Toast.LENGTH_SHORT).show()
+                    },
+                    border = BorderStroke(1.dp, if (uiState.isProxyEnabled) AgTerminalGreen else AgTerminalAmber),
+                    shape = RoundedCornerShape(2.dp),
+                    colors = ButtonDefaults.outlinedButtonColors(
+                        contentColor = if (uiState.isProxyEnabled) AgTerminalGreen else AgTerminalAmber
+                    )
+                ) {
+                    Text(
+                        text = if (uiState.isProxyEnabled) "[ENABLED]" else "[DISABLED]",
+                        fontFamily = FontFamily.Monospace,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 11.sp
+                    )
+                }
+            }
+
+            Text(
+                text = "Proxy URL (http://host:port):",
+                color = AgTextSecondary,
+                fontFamily = FontFamily.Monospace,
+                fontSize = 11.sp
+            )
+
+            TextField(
+                value = proxyUrlInput,
+                onValueChange = { proxyUrlInput = it },
+                placeholder = { Text("http://127.0.0.1:8080", color = AgTerminalDim, fontSize = 11.sp, fontFamily = FontFamily.Monospace) },
+                colors = TextFieldDefaults.colors(
+                    focusedContainerColor = AgSurfaceVariant,
+                    unfocusedContainerColor = AgSurfaceVariant,
+                    focusedTextColor = AgTextPrimary,
+                    unfocusedTextColor = AgTextPrimary,
+                    focusedIndicatorColor = AgTerminalPrompt,
+                    unfocusedIndicatorColor = AgBorder
+                ),
+                textStyle = LocalTextStyle.current.copy(fontFamily = FontFamily.Monospace, fontSize = 11.sp),
+                modifier = Modifier.fillMaxWidth()
+            )
+
+            Text(
+                text = "Local presets:",
+                color = AgTerminalDim,
+                fontFamily = FontFamily.Monospace,
+                fontSize = 10.sp
+            )
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                OutlinedButton(
+                    onClick = { proxyUrlInput = "http://127.0.0.1:10808" },
+                    border = BorderStroke(1.dp, AgBorder),
+                    shape = RoundedCornerShape(2.dp),
+                    colors = ButtonDefaults.outlinedButtonColors(contentColor = AgTextSecondary),
+                    contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp)
+                ) {
+                    Text(":10808 (v2ray)", fontFamily = FontFamily.Monospace, fontSize = 10.sp)
+                }
+
+                OutlinedButton(
+                    onClick = { proxyUrlInput = "http://127.0.0.1:7890" },
+                    border = BorderStroke(1.dp, AgBorder),
+                    shape = RoundedCornerShape(2.dp),
+                    colors = ButtonDefaults.outlinedButtonColors(contentColor = AgTextSecondary),
+                    contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp)
+                ) {
+                    Text(":7890 (clash)", fontFamily = FontFamily.Monospace, fontSize = 10.sp)
+                }
+
+                OutlinedButton(
+                    onClick = { proxyUrlInput = "http://127.0.0.1:8080" },
+                    border = BorderStroke(1.dp, AgBorder),
+                    shape = RoundedCornerShape(2.dp),
+                    colors = ButtonDefaults.outlinedButtonColors(contentColor = AgTextSecondary),
+                    contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp)
+                ) {
+                    Text(":8080", fontFamily = FontFamily.Monospace, fontSize = 10.sp)
+                }
+            }
+
+            OutlinedButton(
+                onClick = {
+                    viewModel.setProxyConfig(uiState.isProxyEnabled, proxyUrlInput)
+                    Toast.makeText(context, "Proxy URL saved: $proxyUrlInput", Toast.LENGTH_SHORT).show()
+                },
+                border = BorderStroke(1.dp, AgTerminalPrompt),
+                shape = RoundedCornerShape(2.dp),
+                colors = ButtonDefaults.outlinedButtonColors(contentColor = AgTerminalPrompt),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text("[SAVE PROXY CONFIGURATION]", fontFamily = FontFamily.Monospace, fontSize = 11.sp, fontWeight = FontWeight.Bold)
             }
         }
     }

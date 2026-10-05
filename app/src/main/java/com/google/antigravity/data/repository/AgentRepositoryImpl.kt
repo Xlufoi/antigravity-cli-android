@@ -21,8 +21,14 @@ class AgentRepositoryImpl(private val context: Context) : AgentRepository {
     private val _messagesFlow = MutableSharedFlow<ChatMessage>(replay = 50)
     private val scope = CoroutineScope(Dispatchers.IO)
     override val accountManager = AccountManager(context)
+    override val networkConfigManager = NetworkConfigManager(context)
     private var currentWorkspace: String = context.filesDir.absolutePath + "/workspace"
     private var currentAutoApprove: Boolean = true
+
+    override fun applyDnsConfig(): List<String> {
+        val manager = processManager ?: NativeProcessManager(context = context)
+        return manager.applyDnsConfig()
+    }
 
     override suspend fun startSession(
         model: String,

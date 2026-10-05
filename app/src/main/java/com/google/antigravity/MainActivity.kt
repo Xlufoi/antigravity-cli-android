@@ -7,15 +7,11 @@ import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
-import androidx.lifecycle.lifecycleScope
-import com.google.antigravity.data.ipc.AppLogger
-import com.google.antigravity.data.ipc.EngineInstaller
 import com.google.antigravity.data.repository.AgentRepositoryImpl
 import com.google.antigravity.ui.chat.ChatScreen
 import com.google.antigravity.ui.chat.ChatViewModel
-import com.google.antigravity.ui.setup.SetupScreen
+import com.google.antigravity.ui.setup.InitialSetupScreen
 import com.google.antigravity.ui.theme.AntigravityTheme
-import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
 
@@ -28,34 +24,14 @@ class MainActivity : ComponentActivity() {
 
         setContent {
             AntigravityTheme {
-                var isEngineReady by remember {
-                    mutableStateOf(EngineInstaller.isEngineReady(applicationContext))
-                }
-                var installProgress by remember { mutableFloatStateOf(0f) }
-                var installStatus by remember { mutableStateOf("Нажмите кнопку для распаковки") }
+                val uiState by viewModel.uiState.collectAsState()
 
-                if (!isEngineReady) {
-                    SetupScreen(
-                        progress = installProgress,
-                        statusText = installStatus,
-                        isComplete = installProgress >= 1.0f,
-                        onStartInstall = {
-                            lifecycleScope.launch {
-                                installStatus = "Подготовка..."
-                                AppLogger.log("MainActivity", "User requested engine install")
-                                val success = EngineInstaller.installEngine(applicationContext) { progress, status ->
-                                    installProgress = progress
-                                    installStatus = status
-                                }
-                                if (success) {
-                                    installProgress = 1.0f
-                                    installStatus = "Готово к запуску!"
-                                }
-                            }
-                        },
-                        onLaunchApp = {
-                            isEngineReady = true
-                            viewModel.initEngine()
+                if (!uiState.isOnboardingCompleted) {
+                    InitialSetupScreen(
+                        viewModel = viewModel,
+                        uiState = uiState,
+                        onFinishOnboarding = {
+                            viewModel.completeOnboarding()
                         },
                         modifier = Modifier.fillMaxSize()
                     )

@@ -33,8 +33,21 @@ class NativeProcessManager(
     private val _usageStats = MutableStateFlow(UsageStats())
     val usageStats: StateFlow<UsageStats> = _usageStats.asStateFlow()
 
+    val networkConfigManager = NetworkConfigManager(context)
+
     companion object {
         private const val TAG = "NativeProcessManager"
+    }
+
+    fun applyDnsConfig(): List<String> {
+        val resolvFile = File(context.filesDir, "resolv.conf")
+        val systemDns = getActiveDnsServers()
+        val dnsList = networkConfigManager.getEffectiveDnsServers(systemDns)
+        val resolvText = dnsList.joinToString("\n") { "nameserver $it" } + "\noptions timeout:1 attempts:2 rotate single-request-reopen\n"
+        resolvFile.writeText(resolvText)
+        resolvFile.setReadable(true, false)
+        AppLogger.log(TAG, "Configured resolv.conf [Preset: ${networkConfigManager.selectedPreset.title}] with DNS: ${dnsList.joinToString(", ")}")
+        return dnsList
     }
 
     suspend fun startEngine(): Boolean = withContext(Dispatchers.IO) {
@@ -108,12 +121,7 @@ class NativeProcessManager(
             }
 
             // 4. Create resolv.conf, hosts, and nsswitch.conf for glibc networking & localhost resolution
-            val resolvFile = File(context.filesDir, "resolv.conf")
-            val dnsList = getActiveDnsServers()
-            val resolvText = dnsList.joinToString("\n") { "nameserver $it" } + "\noptions timeout:1 attempts:2 rotate single-request-reopen\n"
-            resolvFile.writeText(resolvText)
-            resolvFile.setReadable(true, false)
-            AppLogger.log(TAG, "Created resolv.conf with DNS: ${dnsList.joinToString(", ")} (${resolvFile.length()} bytes)")
+            applyDnsConfig()
 
             // Setup Antigravity Mobile Rules for ffmpeg, storage, tools
             setupMobileModelRules(File(workspacePath), geminiDir)
@@ -353,11 +361,20 @@ class NativeProcessManager(
         val tmpDir = File(context.cacheDir, "tmp").apply { mkdirs() }
         env["TMPDIR"] = tmpDir.absolutePath
 
-        // Refresh resolv.conf before each prompt in case network / VPN changed
+        if (networkConfigManager.isProxyEnabled && networkConfigManager.proxyUrl.isNotBlank()) {
+            val p = networkConfigManager.proxyUrl.trim()
+            env["http_proxy"] = p
+            env["https_proxy"] = p
+            env["HTTP_PROXY"] = p
+            env["HTTPS_PROXY"] = p
+            env["all_proxy"] = p
+            env["ALL_PROXY"] = p
+            AppLogger.log(TAG, "Configured process HTTP proxy: $p")
+        }
+
+        // Refresh resolv.conf before each prompt in case network / VPN / preset changed
         try {
-            val resolvFile = File(context.filesDir, "resolv.conf")
-            val dnsList = getActiveDnsServers()
-            resolvFile.writeText(dnsList.joinToString("\n") { "nameserver $it" } + "\noptions timeout:1 attempts:2 rotate single-request-reopen\n")
+            applyDnsConfig()
         } catch (_: Exception) {}
 
         // Set up embedded isolated Termux sandbox paths
@@ -718,9 +735,16 @@ class NativeProcessManager(
         val binDir = File(context.filesDir, "bin")
         val nativeLibDir = File(context.applicationInfo.nativeLibraryDir)
 
+        val proxyEnv = if (networkConfigManager.isProxyEnabled && networkConfigManager.proxyUrl.isNotBlank()) {
+            networkConfigManager.proxyUrl.trim()
+        } else null
+
         return when {
             isRoot -> {
-                val fullCmd = "export PATH='${nativeLibDir.absolutePath}:${usrBin.absolutePath}:${binDir.absolutePath}:/system/bin:/system/xbin'; export LD_LIBRARY_PATH='${usrLib.absolutePath}:${nativeLibDir.absolutePath}:/system/lib64'; export PREFIX='${usrDir.absolutePath}'; export TERMUX_PREFIX='${usrDir.absolutePath}'; export PYTHONHOME='${usrDir.absolutePath}'; export PYTHONPATH='${usrLib.absolutePath}/python3.14'; export HOME='${context.filesDir.absolutePath}'; cd '$workspacePath' 2>/dev/null; $cmd"
+                val proxyExport = if (!proxyEnv.isNullOrBlank()) {
+                    "export http_proxy='$proxyEnv'; export https_proxy='$proxyEnv'; export HTTP_PROXY='$proxyEnv'; export HTTPS_PROXY='$proxyEnv'; export all_proxy='$proxyEnv'; export ALL_PROXY='$proxyEnv'; "
+                } else ""
+                val fullCmd = "$proxyExport export PATH='${nativeLibDir.absolutePath}:${usrBin.absolutePath}:${binDir.absolutePath}:/system/bin:/system/xbin'; export LD_LIBRARY_PATH='${usrLib.absolutePath}:${nativeLibDir.absolutePath}:/system/lib64'; export PREFIX='${usrDir.absolutePath}'; export TERMUX_PREFIX='${usrDir.absolutePath}'; export PYTHONHOME='${usrDir.absolutePath}'; export PYTHONPATH='${usrLib.absolutePath}/python3.14'; export HOME='${context.filesDir.absolutePath}'; cd '$workspacePath' 2>/dev/null; $cmd"
                 RootHelper.executeRootCommand(fullCmd)
             }
             isShizuku -> {
@@ -735,6 +759,14 @@ class NativeProcessManager(
                     val pb = ProcessBuilder(shellExecutable, "-c", cmd)
                     pb.directory(File(workspacePath))
                     val env = pb.environment()
+                    if (!proxyEnv.isNullOrBlank()) {
+                        env["http_proxy"] = proxyEnv
+                        env["https_proxy"] = proxyEnv
+                        env["HTTP_PROXY"] = proxyEnv
+                        env["HTTPS_PROXY"] = proxyEnv
+                        env["all_proxy"] = proxyEnv
+                        env["ALL_PROXY"] = proxyEnv
+                    }
                     env["PATH"] = "${nativeLibDir.absolutePath}:${usrBin.absolutePath}:${binDir.absolutePath}:/system/bin:/system/xbin"
                     env["LD_LIBRARY_PATH"] = "${usrLib.absolutePath}:${nativeLibDir.absolutePath}:/system/lib64"
                     env["PREFIX"] = usrDir.absolutePath

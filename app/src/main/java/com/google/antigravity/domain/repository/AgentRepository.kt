@@ -1,9 +1,12 @@
 package com.google.antigravity.domain.repository
 
 import com.google.antigravity.data.ipc.AccountManager
+import com.google.antigravity.data.ipc.ChatHistoryManager
+import com.google.antigravity.data.ipc.NetworkConfigManager
 import com.google.antigravity.domain.model.ChatMessage
 import com.google.antigravity.domain.model.ModelInfo
 import com.google.antigravity.domain.model.UsageStats
+import com.google.antigravity.domain.model.UserQuotaSummary
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.StateFlow
 
@@ -29,11 +32,13 @@ interface AgentRepository {
     fun isAutoApprove(): Boolean
     fun getUsageStats(): StateFlow<UsageStats>
     val accountManager: AccountManager
-    val chatHistoryManager: com.google.antigravity.data.ipc.ChatHistoryManager
+    val chatHistoryManager: ChatHistoryManager
+    val networkConfigManager: NetworkConfigManager
+    fun applyDnsConfig(): List<String>
     suspend fun submitAuthCode(code: String): Boolean
     fun executeShellCommand(cmd: String, isRoot: Boolean, isShizuku: Boolean): String
     fun hasStoragePermission(): Boolean
     fun requestStoragePermission()
     fun grantStorageViaRoot(): Boolean
-    suspend fun syncQuota(): com.google.antigravity.domain.model.UserQuotaSummary
+    suspend fun syncQuota(): UserQuotaSummary
 }
