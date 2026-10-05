@@ -1,0 +1,5 @@
+<resources>
+    <string name="app_name">Antigravity</string>
+    <string name="agent_service_channel">Antigravity Agent Engine</string>
+    <string name="agent_running_notification">Antigravity Agent is active</string>
+</resources>
