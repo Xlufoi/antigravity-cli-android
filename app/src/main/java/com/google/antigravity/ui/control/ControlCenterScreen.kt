@@ -878,10 +878,12 @@ fun ControlCenterScreen(
                             }
                         }
                     }
+                    SettingsSubTab.MENU -> {}
                 }
             }
         }
     }
+}
 
     if (showWorkspaceDialog) {
         WorkspacePickerDialog(
