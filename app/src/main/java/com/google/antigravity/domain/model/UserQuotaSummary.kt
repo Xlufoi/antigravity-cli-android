@@ -15,9 +15,23 @@ data class QuotaBucket(
         get() = (remainingFraction * 100.0).toFloat().coerceIn(0f, 100f)
 
     fun getRefreshText(): String {
+        if (resetTime.isNotBlank()) {
+            try {
+                val resetMillis = java.time.Instant.parse(resetTime).toEpochMilli()
+                val diffMillis = (resetMillis - System.currentTimeMillis()).coerceAtLeast(0L)
+                val hours = diffMillis / 3600000L
+                val minutes = (diffMillis % 3600000L) / 60000L
+                return "Refreshes in ${hours}h ${minutes}m"
+            } catch (_: Exception) {}
+        }
         if (description.contains("it will fully refresh in", ignoreCase = true)) {
             val part = description.substringAfter("it will fully refresh in").trim().removeSuffix(".")
-            return "Refreshes in $part"
+            val formatted = part
+                .replace(Regex("([0-9]+)\\s*hours?", RegexOption.IGNORE_CASE), "$1h")
+                .replace(Regex("([0-9]+)\\s*minutes?", RegexOption.IGNORE_CASE), "$1m")
+                .replace(",", "")
+                .trim()
+            return "Refreshes in $formatted"
         }
         return if (window.isNotBlank()) "Refreshes in $window" else ""
     }

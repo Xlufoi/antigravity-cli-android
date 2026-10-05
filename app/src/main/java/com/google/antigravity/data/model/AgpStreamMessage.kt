@@ -13,5 +13,7 @@ data class AgpStreamMessage(
     val tool_args: Map<String, JsonElement>? = null,
     val tool_output: String? = null,
     val is_error: Boolean? = null,
-    val done: Boolean? = null
+    val done: Boolean? = null,
+    val thought: String? = null,
+    val thought_duration: String? = null
 )

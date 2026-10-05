@@ -61,75 +61,65 @@ fun ChatScreen(
     Scaffold(
         contentWindowInsets = WindowInsets(0, 0, 0, 0),
         topBar = {
-            TopAppBar(
-                navigationIcon = {
-                    // Minimalist top-left SETTINGS button requested by user
-                    OutlinedButton(
-                        onClick = {
-                            initialSettingsTab = SettingsSubTab.ACCOUNTS
-                            showSettings = !showSettings
-                        },
-                        border = BorderStroke(1.dp, if (showSettings) AgTerminalGreen else AgTerminalPrompt),
-                        shape = RoundedCornerShape(2.dp),
-                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
-                        colors = ButtonDefaults.outlinedButtonColors(
-                            contentColor = if (showSettings) AgTerminalGreen else AgTerminalPrompt
-                        ),
-                        modifier = Modifier.padding(start = 8.dp)
-                    ) {
-                        Text(
-                            text = if (showSettings) "[CHAT]" else "[SETTINGS]",
-                            fontFamily = FontFamily.Monospace,
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 11.sp
-                        )
-                    }
-                },
-                title = {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.Center,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .statusBarsPadding()
+                    .background(AgDarkBackground)
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 12.dp, vertical = 6.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = if (showSettings) "[CHAT]" else "[SETTINGS]",
+                        color = if (showSettings) AgTerminalGreen else AgTerminalPrompt,
+                        fontFamily = FontFamily.Monospace,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 12.sp,
+                        modifier = Modifier
+                            .clickable {
+                                initialSettingsTab = SettingsSubTab.ACCOUNTS
+                                showSettings = !showSettings
+                            }
+                            .padding(vertical = 4.dp, horizontal = 2.dp)
+                    )
+
+                    Row(verticalAlignment = Alignment.CenterVertically) {
                         Text(
                             text = "antigravity",
-                            fontSize = 14.sp,
+                            fontSize = 13.sp,
                             fontWeight = FontWeight.Bold,
                             fontFamily = FontFamily.Monospace,
                             color = AgTerminalPrompt
                         )
                         Text(
                             text = "::cli",
-                            fontSize = 12.sp,
+                            fontSize = 13.sp,
                             fontFamily = FontFamily.Monospace,
                             color = AgTextSecondary
                         )
                     }
-                },
-                actions = {
-                    // Quick "+ NEW" chat button in top right
-                    OutlinedButton(
-                        onClick = {
-                            viewModel.createNewChat()
-                            showSettings = false
-                        },
-                        border = BorderStroke(1.dp, AgBorder),
-                        shape = RoundedCornerShape(2.dp),
-                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
-                        colors = ButtonDefaults.outlinedButtonColors(contentColor = AgTextSecondary),
-                        modifier = Modifier.padding(end = 8.dp)
-                    ) {
-                        Text(
-                            text = "[+ NEW]",
-                            fontFamily = FontFamily.Monospace,
-                            fontSize = 11.sp
-                        )
-                    }
-                },
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = AgDarkBackground
-                )
-            )
+
+                    Text(
+                        text = "[+ NEW]",
+                        color = AgTextSecondary,
+                        fontFamily = FontFamily.Monospace,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 12.sp,
+                        modifier = Modifier
+                            .clickable {
+                                viewModel.createNewChat()
+                                showSettings = false
+                            }
+                            .padding(vertical = 4.dp, horizontal = 2.dp)
+                    )
+                }
+                HorizontalDivider(color = AgSeparator, thickness = 1.dp)
+            }
         },
         bottomBar = {
             if (!showSettings) {

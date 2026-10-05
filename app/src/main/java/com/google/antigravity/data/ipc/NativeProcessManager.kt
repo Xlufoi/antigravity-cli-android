@@ -404,7 +404,15 @@ class NativeProcessManager(
 
                             if (textDelta != null) {
                                 chunkEmitted = true
-                                send(AgpStreamMessage(type = "chunk", text = textDelta))
+                                if (stepType == "thinking") {
+                                    send(AgpStreamMessage(type = "thought_chunk", thought = textDelta))
+                                } else {
+                                    send(AgpStreamMessage(type = "chunk", text = textDelta))
+                                }
+                            } else if (stepType == "thinking" && state == "DONE") {
+                                val durationSec = stepUpdate?.get("duration_seconds")?.jsonPrimitive?.content
+                                val formatted = durationSec?.toDoubleOrNull()?.let { "%.0fs".format(java.util.Locale.US, it) } ?: "1s"
+                                send(AgpStreamMessage(type = "thought_done", thought_duration = formatted))
                             } else if (stepType == "tool") {
                                 val toolName = stepUpdate?.get("tool_name")?.jsonPrimitive?.content ?: "tool"
                                 if (state == "ACTIVE") {

@@ -71,12 +71,7 @@ fun MessageBubble(
                     lineHeight = 20.sp
                 )
             }
-            Spacer(modifier = Modifier.height(10.dp))
-            HorizontalDivider(
-                color = AgSeparator,
-                thickness = 1.dp,
-                modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp)
-            )
+            Spacer(modifier = Modifier.height(6.dp))
         } else if (isSystem) {
             // System / shell feedback
             Column(
@@ -123,13 +118,33 @@ fun MessageBubble(
                 modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp)
             )
         } else {
-            // Agent response in crisp white (matching Screenshot 1)
+            // Agent response in crisp white with thinking support (matching Screenshot 1)
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(vertical = 2.dp)
             ) {
-                // If message text is present
+                // 1. Thinking block (▸ Thought for 1s ...)
+                if (message.thinkingText.isNotBlank()) {
+                    val durationText = if (message.thoughtDuration.isNotBlank()) " for ${message.thoughtDuration}" else ""
+                    Text(
+                        text = "▸ Thought$durationText",
+                        color = AgTextSecondary,
+                        fontFamily = FontFamily.Monospace,
+                        fontSize = 13.sp,
+                        modifier = Modifier.padding(bottom = 2.dp)
+                    )
+                    Text(
+                        text = "  ${message.thinkingText.trim()}",
+                        color = AgTerminalDim,
+                        fontFamily = FontFamily.Monospace,
+                        fontSize = 12.sp,
+                        lineHeight = 17.sp,
+                        modifier = Modifier.padding(bottom = 6.dp)
+                    )
+                }
+
+                // 2. Response block
                 if (message.text.isNotBlank()) {
                     val displayText = if (message.isStreaming) {
                         if (cursorAlpha > 0.5f) "${message.text} █" else "${message.text}  "
@@ -138,21 +153,21 @@ fun MessageBubble(
                     }
 
                     Text(
-                        text = displayText,
+                        text = "  ${displayText.trimStart()}",
                         color = AgTextPrimary,
                         fontFamily = FontFamily.Monospace,
-                        fontSize = 14.sp,
-                        lineHeight = 20.sp
+                        fontSize = 13.sp,
+                        lineHeight = 19.sp
                     )
-                } else if (message.isStreaming) {
+                } else if (message.isStreaming && message.thinkingText.isBlank()) {
                     // Immediate terminal cursor when starting response
-                    val cursorText = if (cursorAlpha > 0.5f) "█" else " "
+                    val cursorText = if (cursorAlpha > 0.5f) "  █" else "   "
                     Text(
                         text = cursorText,
                         color = AgTerminalPrompt,
                         fontFamily = FontFamily.Monospace,
                         fontWeight = FontWeight.Bold,
-                        fontSize = 15.sp
+                        fontSize = 14.sp
                     )
                 }
 
@@ -191,7 +206,7 @@ fun MessageBubble(
                 HorizontalDivider(
                     color = AgSeparator,
                     thickness = 1.dp,
-                    modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp)
+                    modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)
                 )
             }
         }

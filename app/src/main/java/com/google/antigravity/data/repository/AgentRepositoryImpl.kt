@@ -50,7 +50,25 @@ class AgentRepositoryImpl(private val context: Context) : AgentRepository {
     }
 
     override suspend fun sendMessage(prompt: String): Boolean {
-        val manager = processManager ?: return false
+        if (processManager == null) {
+            val token = accountManager.getActiveAccessToken()
+            startSession(
+                model = "gemini-3.8-flash-low",
+                oauthToken = token,
+                workspacePath = currentWorkspace,
+                autoApprove = currentAutoApprove
+            )
+        }
+        val manager = processManager
+        if (manager == null) {
+            _messagesFlow.emit(
+                ChatMessage(
+                    sender = MessageSender.SYSTEM,
+                    text = "[CLI ERROR]: Native engine process manager is not ready."
+                )
+            )
+            return false
+        }
 
         val userMessageId = UUID.randomUUID().toString()
         _messagesFlow.emit(
@@ -64,6 +82,8 @@ class AgentRepositoryImpl(private val context: Context) : AgentRepository {
 
         scope.launch {
             val messageId = UUID.randomUUID().toString()
+            var currentThoughtMessage = ""
+            var currentThoughtDuration = ""
             var currentAgentMessage = ""
 
             // Immediately emit streaming placeholder so user sees typing indicator instantly
@@ -88,6 +108,34 @@ class AgentRepositoryImpl(private val context: Context) : AgentRepository {
                             )
                         }
                     }
+                    "thought_chunk" -> {
+                        event.thought?.let { chunk ->
+                            currentThoughtMessage += chunk
+                            _messagesFlow.emit(
+                                ChatMessage(
+                                    id = messageId,
+                                    sender = MessageSender.AGENT,
+                                    text = currentAgentMessage,
+                                    thinkingText = currentThoughtMessage,
+                                    thoughtDuration = currentThoughtDuration,
+                                    isStreaming = true
+                                )
+                            )
+                        }
+                    }
+                    "thought_done" -> {
+                        event.thought_duration?.let { currentThoughtDuration = it }
+                        _messagesFlow.emit(
+                            ChatMessage(
+                                id = messageId,
+                                sender = MessageSender.AGENT,
+                                text = currentAgentMessage,
+                                thinkingText = currentThoughtMessage,
+                                thoughtDuration = currentThoughtDuration,
+                                isStreaming = true
+                            )
+                        )
+                    }
                     "chunk" -> {
                         event.text?.let { chunk ->
                             currentAgentMessage += chunk
@@ -96,6 +144,8 @@ class AgentRepositoryImpl(private val context: Context) : AgentRepository {
                                     id = messageId,
                                     sender = MessageSender.AGENT,
                                     text = currentAgentMessage,
+                                    thinkingText = currentThoughtMessage,
+                                    thoughtDuration = currentThoughtDuration,
                                     isStreaming = true
                                 )
                             )
@@ -104,15 +154,17 @@ class AgentRepositoryImpl(private val context: Context) : AgentRepository {
                     "tool_start" -> {
                         event.text?.let { toolStatus ->
                             val displayText = if (currentAgentMessage.isNotBlank()) {
-                                "$currentAgentMessage\n\n_${toolStatus}_"
+                                "$currentAgentMessage\n\n$toolStatus"
                             } else {
-                                "_${toolStatus}_"
+                                toolStatus
                             }
                             _messagesFlow.emit(
                                 ChatMessage(
                                     id = messageId,
                                     sender = MessageSender.AGENT,
                                     text = displayText,
+                                    thinkingText = currentThoughtMessage,
+                                    thoughtDuration = currentThoughtDuration,
                                     isStreaming = true
                                 )
                             )
@@ -126,6 +178,8 @@ class AgentRepositoryImpl(private val context: Context) : AgentRepository {
                                     id = messageId,
                                     sender = MessageSender.AGENT,
                                     text = currentAgentMessage,
+                                    thinkingText = currentThoughtMessage,
+                                    thoughtDuration = currentThoughtDuration,
                                     isStreaming = true
                                 )
                             )
@@ -137,6 +191,8 @@ class AgentRepositoryImpl(private val context: Context) : AgentRepository {
                                 id = messageId,
                                 sender = MessageSender.AGENT,
                                 text = currentAgentMessage,
+                                thinkingText = currentThoughtMessage,
+                                thoughtDuration = currentThoughtDuration,
                                 isStreaming = false
                             )
                         )

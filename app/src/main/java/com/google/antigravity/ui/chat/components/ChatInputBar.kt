@@ -123,47 +123,59 @@ fun ChatInputBar(
             )
         }
 
-        // Horizontal line separator
-        HorizontalDivider(color = AgBorder, thickness = 0.5.dp)
+        // Horizontal line separator (matching Screenshot 1)
+        HorizontalDivider(color = AgSeparator, thickness = 1.dp)
 
-        // Console Pills Row directly underneath input
+        // Status Line: "? for shortcuts" on left, model name on right (EXACT Screenshot 1)
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 10.dp, vertical = 4.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = "? for shortcuts",
+                color = AgTextSecondary,
+                fontFamily = FontFamily.Monospace,
+                fontSize = 12.sp
+            )
+            Text(
+                text = activeModel,
+                color = AgTerminalPrompt,
+                fontFamily = FontFamily.Monospace,
+                fontSize = 12.sp,
+                modifier = Modifier.clickable { onModelClick() }
+            )
+        }
+
+        // Quick Console Chips directly below
         Row(
             modifier = Modifier
                 .fillMaxWidth()
                 .horizontalScroll(chipScrollState)
-                .padding(horizontal = 10.dp, vertical = 6.dp),
+                .padding(horizontal = 8.dp, vertical = 4.dp),
             horizontalArrangement = Arrangement.spacedBy(6.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            // 1. Model Button
-            TerminalChip(
-                text = "[$activeModel]",
-                color = AgTerminalPrompt,
-                onClick = onModelClick
-            )
-
-            // 2. Workspace Button
-            TerminalChip(
-                text = "[$shortWorkspace]",
-                color = AgTextSecondary,
-                onClick = onWorkspaceClick
-            )
-
-            // 3. ADB Button (replaces sandboxed)
-            TerminalChip(
-                text = if (isShizukuActive) "[adb: ON]" else "[adb: OFF]",
-                color = if (isShizukuActive) AgTerminalGreen else AgTextSecondary,
-                onClick = onAdbClick
-            )
-
-            // 4. Root Button (replaces sandboxed)
             TerminalChip(
                 text = if (isRootActive) "[root: ON]" else "[root: OFF]",
                 color = if (isRootActive) AgTerminalGreen else AgTextSecondary,
                 onClick = onRootClick
             )
 
-            // 5. Slash command chips (/plan, /boost, /stats, /clear)
+            TerminalChip(
+                text = if (isShizukuActive) "[adb: ON]" else "[adb: OFF]",
+                color = if (isShizukuActive) AgTerminalGreen else AgTextSecondary,
+                onClick = onAdbClick
+            )
+
+            TerminalChip(
+                text = "[$shortWorkspace]",
+                color = AgTextSecondary,
+                onClick = onWorkspaceClick
+            )
+
             TerminalChip(
                 text = "[/plan]",
                 color = AgTerminalAmber,
@@ -181,19 +193,21 @@ fun ChatInputBar(
             )
 
             TerminalChip(
-                text = "[/stats]",
+                text = "[/model]",
                 color = AgTerminalPrompt,
-                onClick = {
-                    onSendMessage("/stats")
-                }
+                onClick = onModelClick
+            )
+
+            TerminalChip(
+                text = "[/stats]",
+                color = AgTextSecondary,
+                onClick = { onSendMessage("/stats") }
             )
 
             TerminalChip(
                 text = "[/clear]",
                 color = AgTextSecondary,
-                onClick = {
-                    onSendMessage("/clear")
-                }
+                onClick = { onSendMessage("/clear") }
             )
         }
     }
