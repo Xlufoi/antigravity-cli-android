@@ -32,15 +32,23 @@ class AgentRepositoryImpl(private val context: Context) : AgentRepository {
         val started = manager.startEngine()
         if (started) {
             processManager = manager
-            listenToProcessEvents(manager)
         }
         return started
     }
 
-    private fun listenToProcessEvents(manager: NativeProcessManager) {
+    override suspend fun sendMessage(prompt: String): Boolean {
+        val manager = processManager ?: return false
+        _messagesFlow.emit(
+            ChatMessage(
+                sender = MessageSender.USER,
+                text = prompt,
+                isStreaming = false
+            )
+        )
+
         scope.launch {
             var currentAgentMessage = ""
-            manager.observeEvents().collect { event ->
+            manager.executePrompt(prompt).collect { event ->
                 when (event.type) {
                     "auth_url" -> {
                         event.text?.let { urlText ->
@@ -52,7 +60,7 @@ class AgentRepositoryImpl(private val context: Context) : AgentRepository {
                             )
                         }
                     }
-                    "text", "chunk" -> {
+                    "chunk" -> {
                         event.text?.let { chunk ->
                             currentAgentMessage += chunk
                             _messagesFlow.emit(
@@ -63,37 +71,6 @@ class AgentRepositoryImpl(private val context: Context) : AgentRepository {
                                 )
                             )
                         }
-                    }
-                    "tool_use" -> {
-                        val tool = ToolCall(
-                            name = event.tool_name ?: "Tool",
-                            summary = event.tool_summary ?: event.tool_action ?: "Executing action...",
-                            status = ToolStatus.RUNNING
-                        )
-                        _messagesFlow.emit(
-                            ChatMessage(
-                                sender = MessageSender.AGENT,
-                                text = currentAgentMessage,
-                                toolCall = tool,
-                                isStreaming = true
-                            )
-                        )
-                    }
-                    "tool_result" -> {
-                        val tool = ToolCall(
-                            name = event.tool_name ?: "Tool",
-                            summary = event.tool_summary ?: "Completed",
-                            status = if (event.is_error == true) ToolStatus.FAILED else ToolStatus.COMPLETED,
-                            output = event.tool_output
-                        )
-                        _messagesFlow.emit(
-                            ChatMessage(
-                                sender = MessageSender.AGENT,
-                                text = currentAgentMessage,
-                                toolCall = tool,
-                                isStreaming = true
-                            )
-                        )
                     }
                     "done" -> {
                         _messagesFlow.emit(
@@ -108,23 +85,12 @@ class AgentRepositoryImpl(private val context: Context) : AgentRepository {
                 }
             }
         }
-    }
-
-    override suspend fun sendMessage(prompt: String): Boolean {
-        _messagesFlow.emit(
-            ChatMessage(
-                sender = MessageSender.USER,
-                text = prompt,
-                isStreaming = false
-            )
-        )
-        return processManager?.sendUserPrompt(prompt) ?: false
+        return true
     }
 
     override fun getMessagesFlow(): Flow<ChatMessage> = _messagesFlow.asSharedFlow()
 
     override fun stopSession() {
         processManager?.stopEngine()
-        processManager = null
     }
 }
