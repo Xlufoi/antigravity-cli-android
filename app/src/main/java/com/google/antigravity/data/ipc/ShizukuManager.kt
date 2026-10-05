@@ -1,7 +1,8 @@
 package com.google.antigravity.data.ipc
 
 import android.content.pm.PackageManager
-import dev.rikka.shizuku.Shizuku
+import rikka.shizuku.Shizuku
+import java.io.InputStream
 
 object ShizukuManager {
     private const val TAG = "ShizukuManager"
@@ -42,8 +43,10 @@ object ShizukuManager {
                 return "Ошибка: Доступ Shizuku не предоставлен."
             }
             val proc = Shizuku.newProcess(arrayOf("sh", "-c", command), null, null)
-            val output = proc.inputStream.bufferedReader().readText()
-            val error = proc.errorStream.bufferedReader().readText()
+            val inputStream: InputStream = proc.inputStream
+            val errorStream: InputStream = proc.errorStream
+            val output = inputStream.bufferedReader().use { it.readText() }
+            val error = errorStream.bufferedReader().use { it.readText() }
             proc.waitFor()
             if (output.isNotBlank()) output.trim() else error.trim()
         } catch (e: Throwable) {

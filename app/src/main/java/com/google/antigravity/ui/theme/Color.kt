@@ -17,6 +17,7 @@ val AgError = Color(0xFFF87171)
 
 // Console / Terminal specifics
 val AgTerminalPrompt = Color(0xFF38BDF8)
+val AgTerminalGreen = Color(0xFF34D399)
 val AgTerminalPurple = Color(0xFFA78BFA)
 val AgTerminalAmber = Color(0xFFFBBF24)
 val AgTerminalDim = Color(0xFF475569)
