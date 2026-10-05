@@ -30,9 +30,13 @@ class AgentForegroundService : Service() {
         startForeground(NOTIFICATION_ID, createNotification())
     }
 
-    fun initProcessManager(binaryPath: String, workspacePath: String, model: String) {
+    fun initProcessManager(model: String, oauthToken: String? = null) {
         if (processManager == null) {
-            processManager = NativeProcessManager(binaryPath, workspacePath, model)
+            processManager = NativeProcessManager(
+                context = applicationContext,
+                model = model,
+                oauthToken = oauthToken
+            )
         }
     }
 
