@@ -4,8 +4,6 @@ import android.content.Context
 import com.google.antigravity.data.ipc.NativeProcessManager
 import com.google.antigravity.domain.model.ChatMessage
 import com.google.antigravity.domain.model.MessageSender
-import com.google.antigravity.domain.model.ToolCall
-import com.google.antigravity.domain.model.ToolStatus
 import com.google.antigravity.domain.repository.AgentRepository
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -13,6 +11,7 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.launch
+import java.util.UUID
 
 class AgentRepositoryImpl(private val context: Context) : AgentRepository {
 
@@ -38,6 +37,19 @@ class AgentRepositoryImpl(private val context: Context) : AgentRepository {
 
     override suspend fun sendMessage(prompt: String): Boolean {
         val manager = processManager ?: return false
+
+        // If process is already waiting for input (e.g. auth code or prompt)
+        if (manager.sendInput(prompt)) {
+            _messagesFlow.emit(
+                ChatMessage(
+                    sender = MessageSender.USER,
+                    text = prompt,
+                    isStreaming = false
+                )
+            )
+            return true
+        }
+
         _messagesFlow.emit(
             ChatMessage(
                 sender = MessageSender.USER,
@@ -47,7 +59,9 @@ class AgentRepositoryImpl(private val context: Context) : AgentRepository {
         )
 
         scope.launch {
+            val messageId = UUID.randomUUID().toString()
             var currentAgentMessage = ""
+
             manager.executePrompt(prompt).collect { event ->
                 when (event.type) {
                     "auth_url" -> {
@@ -55,7 +69,7 @@ class AgentRepositoryImpl(private val context: Context) : AgentRepository {
                             _messagesFlow.emit(
                                 ChatMessage(
                                     sender = MessageSender.SYSTEM,
-                                    text = "🔗 Для входа перейдите по ссылке авторизации:\n\n$urlText"
+                                    text = "🔗 Требуется авторизация Google:\n$urlText\n\nНажмите кнопку ниже, чтобы открыть в браузере, затем вставьте код авторизации сюда."
                                 )
                             )
                         }
@@ -65,6 +79,7 @@ class AgentRepositoryImpl(private val context: Context) : AgentRepository {
                             currentAgentMessage += chunk
                             _messagesFlow.emit(
                                 ChatMessage(
+                                    id = messageId,
                                     sender = MessageSender.AGENT,
                                     text = currentAgentMessage,
                                     isStreaming = true
@@ -75,6 +90,7 @@ class AgentRepositoryImpl(private val context: Context) : AgentRepository {
                     "done" -> {
                         _messagesFlow.emit(
                             ChatMessage(
+                                id = messageId,
                                 sender = MessageSender.AGENT,
                                 text = currentAgentMessage,
                                 isStreaming = false
@@ -86,6 +102,14 @@ class AgentRepositoryImpl(private val context: Context) : AgentRepository {
             }
         }
         return true
+    }
+
+    override fun sendInput(input: String): Boolean {
+        return processManager?.sendInput(input) ?: false
+    }
+
+    override fun importTokenFromDownloads(): Boolean {
+        return processManager?.importTokenFromDownloads() ?: false
     }
 
     override fun getMessagesFlow(): Flow<ChatMessage> = _messagesFlow.asSharedFlow()

@@ -12,6 +12,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.BugReport
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Key
+import androidx.compose.material.icons.filled.SaveAlt
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -181,16 +182,36 @@ fun ChatScreen(
             title = { Text("Авторизация Gemini / OAuth", color = AgTextPrimary) },
             text = {
                 Column {
+                    // Quick import button
+                    OutlinedButton(
+                        onClick = {
+                            val imported = viewModel.importTokenFromDownloads()
+                            if (imported) {
+                                Toast.makeText(context, "Токен успешно загружен из Downloads!", Toast.LENGTH_SHORT).show()
+                                showAuthDialog = false
+                            } else {
+                                Toast.makeText(context, "Файл /sdcard/Download/antigravity-oauth-token не найден", Toast.LENGTH_LONG).show()
+                            }
+                        },
+                        colors = ButtonDefaults.outlinedButtonColors(contentColor = AgAccent),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Icon(Icons.Default.SaveAlt, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("Загрузить токен из Downloads", fontSize = 13.sp)
+                    }
+
+                    Spacer(modifier = Modifier.height(12.dp))
                     Text(
-                        "Вставьте Google OAuth токен или Gemini API токен:",
-                        fontSize = 13.sp,
+                        "Или вставьте Google OAuth токен (JSON, ya29... или код):",
+                        fontSize = 12.sp,
                         color = AgTextSecondary
                     )
                     Spacer(modifier = Modifier.height(8.dp))
                     TextField(
                         value = tokenInput,
                         onValueChange = { tokenInput = it },
-                        placeholder = { Text("ya29... или AIza...", fontSize = 12.sp) },
+                        placeholder = { Text("ya29... или {...} токен", fontSize = 12.sp) },
                         colors = TextFieldDefaults.colors(
                             focusedContainerColor = AgSurfaceVariant,
                             unfocusedContainerColor = AgSurfaceVariant,
@@ -198,7 +219,8 @@ fun ChatScreen(
                             unfocusedTextColor = AgTextPrimary
                         ),
                         shape = RoundedCornerShape(8.dp),
-                        modifier = Modifier.fillMaxWidth()
+                        modifier = Modifier.fillMaxWidth(),
+                        maxLines = 4
                     )
                 }
             },
@@ -207,11 +229,12 @@ fun ChatScreen(
                     onClick = {
                         if (tokenInput.isNotBlank()) {
                             viewModel.updateToken(tokenInput.trim())
+                            Toast.makeText(context, "Токен сохранён!", Toast.LENGTH_SHORT).show()
                         }
                         showAuthDialog = false
                     }
                 ) {
-                    Text("Сохранить и подключить")
+                    Text("Сохранить")
                 }
             },
             dismissButton = {

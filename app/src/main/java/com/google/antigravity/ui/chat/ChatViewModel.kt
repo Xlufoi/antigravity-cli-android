@@ -74,6 +74,14 @@ class ChatViewModel(
         initEngine(token)
     }
 
+    fun importTokenFromDownloads(): Boolean {
+        val success = repository.importTokenFromDownloads()
+        if (success) {
+            initEngine()
+        }
+        return success
+    }
+
     fun stopSession() {
         repository.stopSession()
         _uiState.update { it.copy(isStreaming = false) }
