@@ -64,9 +64,19 @@ class NativeProcessManager(
                 AppLogger.log(TAG, "Saved oauth token to ${tokenFile.absolutePath}")
             }
 
+            // Prefer ld loader extracted into nativeLibraryDir (allowed to execute by Android W^X policy)
+            val nativeLibDir = File(context.applicationInfo.nativeLibraryDir)
+            val nativeLd = File(nativeLibDir, "libld.so")
+            val executableLoader = if (nativeLd.exists()) nativeLd else ldLoader
+
+            val libraryPaths = listOf(
+                nativeLibDir.absolutePath,
+                libDir.absolutePath
+            ).joinToString(":")
+
             val command = listOf(
-                ldLoader.absolutePath,
-                "--library-path", libDir.absolutePath,
+                executableLoader.absolutePath,
+                "--library-path", libraryPaths,
                 agyBinary.absolutePath,
                 "--input-format", "stream-json",
                 "--output-format", "stream-json",
