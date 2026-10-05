@@ -9,7 +9,7 @@ import java.io.FileOutputStream
 
 object EngineInstaller {
     private const val TAG = "EngineInstaller"
-    private const val ENGINE_VERSION = "2.5"
+    private const val ENGINE_VERSION = "2.6"
 
     private val BUSYBOX_APPLETS = listOf(
         "[", "[[", "ar", "arch", "arp", "arping", "ascii", "ash", "awk", "base32", "base64",
@@ -27,7 +27,7 @@ object EngineInstaller {
         "pidof", "ping", "pkill", "printenv", "printf", "ps", "pwd", "readlink",
         "realpath", "renice", "reset", "rm", "rmdir", "route", "run-parts", "sed",
         "seq", "sh", "sha1sum", "sha256sum", "sha3sum", "sha512sum", "sleep", "sort",
-        "split", "ssl_client", "stat", "strings", "stty", "su", "sync", "sysctl",
+        "split", "ssl_client", "stat", "strings", "stty", "sync", "sysctl",
         "tac", "tail", "tar", "tee", "test", "time", "timeout", "top", "touch",
         "tr", "traceroute", "true", "truncate", "tty", "uname", "unexpand", "uniq",
         "unlink", "unlzma", "unlzop", "unxz", "unzip", "uptime", "usleep", "uudecode",
@@ -199,15 +199,21 @@ object EngineInstaller {
                 createSymlinkOrCopy(libGit, File(usrBin, "git"))
             }
 
-            // 3. Link busybox and applets
+            // 3. Link busybox and applets (excluding su, bash, curl, git, sh)
             if (libBusybox.exists()) {
                 createSymlinkOrCopy(libBusybox, File(usrBin, "busybox"))
                 for (applet in BUSYBOX_APPLETS) {
-                    if (applet == "busybox" || applet == "bash" || applet == "curl" || applet == "git" || applet == "sh") continue
+                    if (applet == "busybox" || applet == "bash" || applet == "curl" || applet == "git" || applet == "sh" || applet == "su") continue
                     createSymlinkOrCopy(libBusybox, File(usrBin, applet))
                     createSymlinkOrCopy(libBusybox, File(binDir, applet))
                 }
             }
+
+            // Ensure su is NEVER linked to busybox so real root /system/bin/su works
+            try {
+                File(usrBin, "su").delete()
+                File(binDir, "su").delete()
+            } catch (_: Exception) {}
 
             // 4. Setup TLS / SSL certificates for curl and git
             val caCertFile = File(context.filesDir, "cacert.pem")
@@ -220,7 +226,26 @@ object EngineInstaller {
                 } catch (_: Exception) {}
             }
 
-            // 5. Ensure workspace directory exists
+            // 5. Setup .bashrc for bash commands (bridge to Termux tools if Root is available)
+            val bashrcFile = File(context.filesDir, ".bashrc")
+            bashrcFile.writeText(
+                """
+                # Antigravity mobile shell environment
+                export PATH="${nativeLibDir.absolutePath}:${usrBin.absolutePath}:${binDir.absolutePath}:/system/bin:/system/xbin:/product/bin"
+                export LD_LIBRARY_PATH="${nativeLibDir.absolutePath}:/system/lib64"
+                
+                # Non-intrusive bridge: if Termux is installed and Root is available, expose tools without modifying Termux
+                if [ -x /system/bin/su ] && [ -d /data/data/com.termux/files/usr/bin ]; then
+                    python3() { /system/bin/su -c "export PATH=/data/data/com.termux/files/usr/bin:\$PATH; export LD_LIBRARY_PATH=/data/data/com.termux/files/usr/lib; export HOME=/data/data/com.termux/files/home; python3 \"\$@\""; }
+                    python() { /system/bin/su -c "export PATH=/data/data/com.termux/files/usr/bin:\$PATH; export LD_LIBRARY_PATH=/data/data/com.termux/files/usr/lib; export HOME=/data/data/com.termux/files/home; python \"\$@\""; }
+                    ffmpeg() { /system/bin/su -c "export PATH=/data/data/com.termux/files/usr/bin:\$PATH; export LD_LIBRARY_PATH=/data/data/com.termux/files/usr/lib; export HOME=/data/data/com.termux/files/home; ffmpeg \"\$@\""; }
+                    pip() { /system/bin/su -c "export PATH=/data/data/com.termux/files/usr/bin:\$PATH; export LD_LIBRARY_PATH=/data/data/com.termux/files/usr/lib; export HOME=/data/data/com.termux/files/home; pip \"\$@\""; }
+                    pip3() { /system/bin/su -c "export PATH=/data/data/com.termux/files/usr/bin:\$PATH; export LD_LIBRARY_PATH=/data/data/com.termux/files/usr/lib; export HOME=/data/data/com.termux/files/home; pip3 \"\$@\""; }
+                fi
+                """.trimIndent()
+            )
+
+            // 6. Ensure workspace directory exists
             File(context.filesDir, "workspace").mkdirs()
             AppLogger.log(TAG, "Sandbox Linux environment configured successfully with nativeLibDir: ${nativeLibDir.absolutePath}")
         } catch (e: Exception) {

@@ -568,7 +568,75 @@ fun ControlCenterScreen(
             }
         }
 
-        // --- SECTION 7: WORKSPACE FOLDER PICKER ---
+        // --- SECTION 7: STORAGE ACCESS ---
+        Card(
+            colors = CardDefaults.cardColors(containerColor = AgSurface),
+            border = BorderStroke(1.dp, AgBorder),
+            shape = RoundedCornerShape(12.dp),
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Default.Storage, contentDescription = null, tint = AgTerminalPrompt, modifier = Modifier.size(20.dp))
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("Доступ к памяти (Все файлы)", color = AgTextPrimary, fontSize = 15.sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace)
+                    }
+
+                    Surface(
+                        shape = RoundedCornerShape(6.dp),
+                        color = if (uiState.isStorageGranted) AgAccent.copy(alpha = 0.2f) else AgError.copy(alpha = 0.2f)
+                    ) {
+                        Text(
+                            text = if (uiState.isStorageGranted) "GRANTED" else "DENIED",
+                            color = if (uiState.isStorageGranted) AgAccent else AgError,
+                            fontSize = 10.sp,
+                            fontFamily = FontFamily.Monospace,
+                            fontWeight = FontWeight.Bold,
+                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                        )
+                    }
+                }
+
+                Text(
+                    "Необходим для чтения и редактирования файлов в папках на устройстве (/sdcard, Download, музыка, проекты).",
+                    color = AgTextSecondary,
+                    fontSize = 11.sp
+                )
+
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Button(
+                        onClick = { viewModel.requestStoragePermission() },
+                        colors = ButtonDefaults.buttonColors(containerColor = if (uiState.isStorageGranted) AgSurfaceVariant else AgTerminalPrompt),
+                        shape = RoundedCornerShape(6.dp),
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Text(
+                            text = if (uiState.isStorageGranted) "Настройки доступа" else "Разрешить доступ",
+                            fontSize = 12.sp,
+                            color = if (uiState.isStorageGranted) AgTextPrimary else Color.Black,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+
+                    if (uiState.isRootAvailable && !uiState.isStorageGranted) {
+                        Button(
+                            onClick = { viewModel.grantStorageViaRoot() },
+                            colors = ButtonDefaults.buttonColors(containerColor = AgTerminalAmber),
+                            shape = RoundedCornerShape(6.dp)
+                        ) {
+                            Text("Выдать через Root", fontSize = 12.sp, color = Color.Black)
+                        }
+                    }
+                }
+            }
+        }
+
+        // --- SECTION 8: WORKSPACE FOLDER PICKER ---
         Card(
             colors = CardDefaults.cardColors(containerColor = AgSurface),
             border = BorderStroke(1.dp, AgBorder),

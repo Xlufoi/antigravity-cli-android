@@ -210,4 +210,8 @@ class AgentRepositoryImpl(private val context: Context) : AgentRepository {
         val manager = processManager ?: NativeProcessManager(context = context)
         return manager.executeShellCommand(cmd, isRoot = isRoot, isShizuku = isShizuku)
     }
+
+    override fun hasStoragePermission(): Boolean = com.google.antigravity.data.ipc.StoragePermissionHelper.hasStoragePermission(context)
+    override fun requestStoragePermission() = com.google.antigravity.data.ipc.StoragePermissionHelper.requestStoragePermission(context)
+    override fun grantStorageViaRoot(): Boolean = com.google.antigravity.data.ipc.StoragePermissionHelper.tryGrantStorageViaRoot(context)
 }

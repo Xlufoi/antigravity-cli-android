@@ -32,4 +32,7 @@ interface AgentRepository {
     val chatHistoryManager: com.google.antigravity.data.ipc.ChatHistoryManager
     suspend fun submitAuthCode(code: String): Boolean
     fun executeShellCommand(cmd: String, isRoot: Boolean, isShizuku: Boolean): String
+    fun hasStoragePermission(): Boolean
+    fun requestStoragePermission()
+    fun grantStorageViaRoot(): Boolean
 }

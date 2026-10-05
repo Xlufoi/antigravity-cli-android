@@ -37,11 +37,12 @@ data class ChatUiState(
     val oauthToken: String = "",
     val workspacePath: String = "",
     val autoApprove: Boolean = true,
-    // Shizuku & Root
+    // Shizuku & Root & Storage
     val isShizukuInstalled: Boolean = false,
     val isShizukuGranted: Boolean = false,
     val isRootAvailable: Boolean = false,
     val isRootGranted: Boolean = false,
+    val isStorageGranted: Boolean = false,
     val systemCommandResult: String? = null,
     // Accounts
     val accounts: List<AccountProfile> = emptyList(),
@@ -344,14 +345,32 @@ class ChatViewModel(
         val shizukuGranted = ShizukuManager.isPermissionGranted()
         val rootAvail = RootHelper.isRootAvailable()
         val rootGranted = if (rootAvail) RootHelper.isRootGranted() else false
+        var storageGranted = repository.hasStoragePermission()
+
+        if (!storageGranted && rootAvail) {
+            repository.grantStorageViaRoot()
+            storageGranted = repository.hasStoragePermission()
+        }
 
         _uiState.update {
             it.copy(
                 isShizukuInstalled = shizukuInstalled,
                 isShizukuGranted = shizukuGranted,
                 isRootAvailable = rootAvail,
-                isRootGranted = rootGranted
+                isRootGranted = rootGranted,
+                isStorageGranted = storageGranted
             )
+        }
+    }
+
+    fun requestStoragePermission() {
+        repository.requestStoragePermission()
+    }
+
+    fun grantStorageViaRoot() {
+        viewModelScope.launch {
+            repository.grantStorageViaRoot()
+            checkSystemPrivileges()
         }
     }
 

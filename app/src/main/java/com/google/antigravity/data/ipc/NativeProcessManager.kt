@@ -88,20 +88,23 @@ class NativeProcessManager(
                 AppLogger.log(TAG, "Initialized default jetski_state.pbtxt")
             }
 
-            // 3. Ensure settings.json exists
+            // 3. Ensure settings.json exists and includes all workspaces and storage
             val settingsFile = File(geminiDir, "settings.json")
-            if (!settingsFile.exists() || settingsFile.length() == 0L || settingsFile.readText().contains("High")) {
-                settingsFile.writeText(
-                    """
-                    {
-                      "model": "gemini-3.8-flash-low",
-                      "trustedWorkspaces": [
-                        "$workspacePath"
-                      ]
-                    }
-                    """.trimIndent()
-                )
-                AppLogger.log(TAG, "Initialized default settings.json (gemini-3.8-flash-low)")
+            val defaultSettings = """
+                {
+                  "model": "gemini-3.8-flash-low",
+                  "trustedWorkspaces": [
+                    "$workspacePath",
+                    "/storage/emulated/0",
+                    "/sdcard",
+                    "/storage",
+                    "${context.filesDir.absolutePath}/workspace"
+                  ]
+                }
+            """.trimIndent()
+            if (!settingsFile.exists() || settingsFile.length() == 0L || !settingsFile.readText().contains("/storage/emulated/0")) {
+                settingsFile.writeText(defaultSettings)
+                AppLogger.log(TAG, "Initialized default settings.json with full storage workspaces")
             }
 
             // 4. Create resolv.conf, hosts, and nsswitch.conf for glibc networking & localhost resolution
@@ -287,6 +290,11 @@ class NativeProcessManager(
 
         command.add("--add-dir")
         command.add(workspaceDir.absolutePath)
+        val sdcardDir = File("/storage/emulated/0")
+        if (sdcardDir.exists() && workspaceDir.absolutePath != sdcardDir.absolutePath) {
+            command.add("--add-dir")
+            command.add(sdcardDir.absolutePath)
+        }
 
         if (autoApprovePermissions) {
             command.add("--dangerously-skip-permissions")
@@ -328,6 +336,12 @@ class NativeProcessManager(
         env["TERMUX_PREFIX"] = usrDir.absolutePath
         env["CURL_CA_BUNDLE"] = caCertFile.absolutePath
         env["GIT_SSL_CAINFO"] = caCertFile.absolutePath
+
+        val bashrcFile = File(context.filesDir, ".bashrc")
+        if (bashrcFile.exists()) {
+            env["BASH_ENV"] = bashrcFile.absolutePath
+            env["ENV"] = bashrcFile.absolutePath
+        }
 
         var doneEmitted = false
         fun emitDone() {
@@ -589,7 +603,7 @@ class NativeProcessManager(
     fun executeShellCommand(cmd: String, isRoot: Boolean, isShizuku: Boolean): String {
         return when {
             isRoot -> {
-                val fullCmd = "export PATH=/data/data/com.termux/files/usr/bin:\$PATH; export LD_LIBRARY_PATH=/data/data/com.termux/files/usr/lib; export HOME=/data/data/com.termux/files/home; $cmd"
+                val fullCmd = "export PATH=/data/data/com.termux/files/usr/bin:\$PATH; export LD_LIBRARY_PATH=/data/data/com.termux/files/usr/lib; export HOME=/data/data/com.termux/files/home; cd '$workspacePath' 2>/dev/null; $cmd"
                 RootHelper.executeRootCommand(fullCmd)
             }
             isShizuku -> {
@@ -621,6 +635,11 @@ class NativeProcessManager(
                     env["GIT_SSL_CAINFO"] = File(context.filesDir, "cacert.pem").absolutePath
                     env["TERM"] = "xterm-256color"
                     env["LANG"] = "en_US.UTF-8"
+                    val bashrcFile = File(context.filesDir, ".bashrc")
+                    if (bashrcFile.exists()) {
+                        env["BASH_ENV"] = bashrcFile.absolutePath
+                        env["ENV"] = bashrcFile.absolutePath
+                    }
 
                     val proc = pb.start()
                     val output = proc.inputStream.bufferedReader().use { it.readText() }
