@@ -90,9 +90,9 @@ class AgentRepositoryImpl(private val context: Context) : AgentRepository {
                     "tool_start" -> {
                         event.text?.let { toolStatus ->
                             val displayText = if (currentAgentMessage.isNotBlank()) {
-                                "$currentAgentMessage\n\n_$toolStatus_"
+                                "$currentAgentMessage\n\n_${toolStatus}_"
                             } else {
-                                "_$toolStatus_"
+                                "_${toolStatus}_"
                             }
                             _messagesFlow.emit(
                                 ChatMessage(
