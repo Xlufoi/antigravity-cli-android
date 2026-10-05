@@ -52,9 +52,6 @@ fun ControlCenterScreen(
     val scrollState = rememberScrollState()
     var showWorkspaceDialog by remember { mutableStateOf(false) }
     var tokenInput by remember { mutableStateOf("") }
-    var showAddAccountDialog by remember { mutableStateOf(false) }
-    var newAccountName by remember { mutableStateOf("") }
-    var newAccountToken by remember { mutableStateOf("") }
 
     if (uiState.showOAuthWebView && uiState.generatedAuthUrl != null) {
         OAuthWebViewDialog(
@@ -79,83 +76,11 @@ fun ControlCenterScreen(
             .padding(horizontal = 14.dp, vertical = 8.dp)
     ) {
         if (selectedTab == SettingsSubTab.MENU) {
-            // Full-screen Menu List
-            Column(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .verticalScroll(scrollState)
-                    .padding(vertical = 4.dp),
-                verticalArrangement = Arrangement.spacedBy(14.dp)
-            ) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(
-                        text = "SETTINGS & SYSTEM",
-                        color = AgTerminalPrompt,
-                        fontFamily = FontFamily.Monospace,
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 14.sp
-                    )
-                    Text(
-                        text = "[CHAT]",
-                        color = AgTerminalGreen,
-                        fontFamily = FontFamily.Monospace,
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 12.sp,
-                        modifier = Modifier.clickable { onCloseSettings() }
-                    )
-                }
-
-                Text(
-                    text = "Select a category to view full-screen parameters:",
-                    color = AgTextSecondary,
-                    fontFamily = FontFamily.Monospace,
-                    fontSize = 11.sp
-                )
-
-                HorizontalDivider(color = AgSeparator, thickness = 1.dp)
-
-                SettingsCategoryCard(
-                    index = "1",
-                    title = "ACCOUNTS & QUOTA",
-                    subtitle = "Google authorization, saved profiles switcher & live API quota limits",
-                    onClick = { selectedTab = SettingsSubTab.ACCOUNTS }
-                )
-
-                SettingsCategoryCard(
-                    index = "2",
-                    title = "CHAT HISTORY",
-                    subtitle = "Browse saved conversation sessions, resume previous chats or delete",
-                    onClick = { selectedTab = SettingsSubTab.HISTORY }
-                )
-
-                SettingsCategoryCard(
-                    index = "3",
-                    title = "ADVANCED SETTINGS",
-                    subtitle = "Root access, ADB / Shizuku privileges, workspace permissions & live system logs",
-                    onClick = { selectedTab = SettingsSubTab.ADVANCED }
-                )
-
-                Spacer(modifier = Modifier.height(16.dp))
-
-                OutlinedButton(
-                    onClick = onCloseSettings,
-                    border = BorderStroke(1.dp, AgBorder),
-                    shape = RoundedCornerShape(2.dp),
-                    colors = ButtonDefaults.outlinedButtonColors(contentColor = AgTerminalPrompt),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Text(
-                        text = "[< RETURN TO TERMINAL CHAT]",
-                        fontFamily = FontFamily.Monospace,
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 12.sp
-                    )
-                }
-            }
+            SettingsMenuList(
+                onCloseSettings = onCloseSettings,
+                onSelectTab = { selectedTab = it },
+                scrollState = scrollState
+            )
         } else {
             // Full-screen sub-tab view with top navigation
             Row(
@@ -211,679 +136,33 @@ fun ControlCenterScreen(
                 verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
                 when (selectedTab) {
-                    // ==================== TAB 1: ACCOUNTS & QUOTA ====================
                     SettingsSubTab.ACCOUNTS -> {
-                        // --- SECTION 1: GOOGLE OAUTH LOGIN & ACTIVE ACCOUNT (TOP) ---
-                        SectionHeader("ACTIVE ACCOUNT & GOOGLE LOGIN")
-
-                        val displayEmail = uiState.activeAccountEmail.ifBlank { "Default Account" }
-                        Text(
-                            text = "Active: $displayEmail",
-                            color = if (uiState.activeAccountEmail.isNotBlank()) AgTerminalGreen else AgTextPrimary,
-                            fontFamily = FontFamily.Monospace,
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 12.sp
+                        AccountsTabContent(
+                            viewModel = viewModel,
+                            uiState = uiState,
+                            tokenInput = tokenInput,
+                            onTokenInputChange = { tokenInput = it }
                         )
-                        Text(
-                            text = "Token: ${uiState.currentTokenSnippet}",
-                            color = AgTextSecondary,
-                            fontFamily = FontFamily.Monospace,
-                            fontSize = 11.sp
-                        )
-
-                        Text(
-                            text = "Generate browser login link or paste authorization code / token:",
-                            color = AgTextSecondary,
-                            fontFamily = FontFamily.Monospace,
-                            fontSize = 11.sp
-                        )
-
-                        OutlinedButton(
-                            onClick = { viewModel.requestAuthUrl() },
-                            enabled = !uiState.isGeneratingAuthUrl,
-                            border = BorderStroke(1.dp, AgTerminalPrompt),
-                            shape = RoundedCornerShape(2.dp),
-                            colors = ButtonDefaults.outlinedButtonColors(contentColor = AgTerminalPrompt),
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            Text(
-                                text = if (uiState.isGeneratingAuthUrl) "[GENERATING URL...]" else "[GENERATE LOGIN URL]",
-                                fontFamily = FontFamily.Monospace,
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 12.sp
-                            )
-                        }
-
-                        uiState.generatedAuthUrl?.let { url ->
-                            Column(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .border(1.dp, AgBorder)
-                                    .padding(8.dp),
-                                verticalArrangement = Arrangement.spacedBy(6.dp)
-                            ) {
-                                Text(
-                                    text = url.take(120) + "...",
-                                    color = AgTerminalDim,
-                                    fontFamily = FontFamily.Monospace,
-                                    fontSize = 10.sp
-                                )
-
-                                Row(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                                ) {
-                                    OutlinedButton(
-                                        onClick = {
-                                            try {
-                                                val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url)).apply {
-                                                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                                                }
-                                                context.startActivity(intent)
-                                            } catch (e: Exception) {
-                                                Toast.makeText(context, "Error: ${e.message}", Toast.LENGTH_SHORT).show()
-                                            }
-                                        },
-                                        border = BorderStroke(1.dp, AgTerminalPrompt),
-                                        shape = RoundedCornerShape(2.dp),
-                                        colors = ButtonDefaults.outlinedButtonColors(contentColor = AgTerminalPrompt),
-                                        modifier = Modifier.weight(1f)
-                                    ) {
-                                        Text("[OPEN IN BROWSER]", fontFamily = FontFamily.Monospace, fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                                    }
-
-                                    OutlinedButton(
-                                        onClick = {
-                                            val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                                            clipboard.setPrimaryClip(ClipData.newPlainText("Auth URL", url))
-                                            Toast.makeText(context, "URL copied to clipboard", Toast.LENGTH_SHORT).show()
-                                        },
-                                        border = BorderStroke(1.dp, AgBorder),
-                                        shape = RoundedCornerShape(2.dp),
-                                        colors = ButtonDefaults.outlinedButtonColors(contentColor = AgTextSecondary)
-                                    ) {
-                                        Text("[COPY URL]", fontFamily = FontFamily.Monospace, fontSize = 11.sp)
-                                    }
-                                }
-                            }
-                        }
-
-                        // Direct Code / Token Input
-                        TextField(
-                            value = tokenInput,
-                            onValueChange = { tokenInput = it },
-                            placeholder = {
-                                Text("paste auth code (4/0A...) or token json...", color = AgTerminalDim, fontSize = 12.sp, fontFamily = FontFamily.Monospace)
-                            },
-                            colors = TextFieldDefaults.colors(
-                                focusedContainerColor = AgSurfaceVariant,
-                                unfocusedContainerColor = AgSurfaceVariant,
-                                focusedTextColor = AgTextPrimary,
-                                unfocusedTextColor = AgTextPrimary,
-                                focusedIndicatorColor = AgTerminalPrompt,
-                                unfocusedIndicatorColor = AgBorder
-                            ),
-                            textStyle = LocalTextStyle.current.copy(fontFamily = FontFamily.Monospace, fontSize = 11.sp),
-                            modifier = Modifier.fillMaxWidth()
-                        )
-
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            OutlinedButton(
-                                onClick = {
-                                    if (tokenInput.isNotBlank()) {
-                                        val input = tokenInput.trim()
-                                        if (input.startsWith("{") || input.contains("access_token")) {
-                                            viewModel.saveAccount("Default Account", input)
-                                            Toast.makeText(context, "Token saved and activated", Toast.LENGTH_SHORT).show()
-                                        } else {
-                                            Toast.makeText(context, "Exchanging auth code with Google...", Toast.LENGTH_SHORT).show()
-                                            viewModel.submitAuthCode(input) { success ->
-                                                if (success) {
-                                                    Toast.makeText(context, "Google OAuth success!", Toast.LENGTH_LONG).show()
-                                                } else {
-                                                    Toast.makeText(context, "Auth code exchange failed. Please generate new URL.", Toast.LENGTH_LONG).show()
-                                                }
-                                            }
-                                        }
-                                        tokenInput = ""
-                                    }
-                                },
-                                border = BorderStroke(1.dp, AgTerminalPrompt),
-                                shape = RoundedCornerShape(2.dp),
-                                colors = ButtonDefaults.outlinedButtonColors(contentColor = AgTerminalPrompt),
-                                modifier = Modifier.weight(1f)
-                            ) {
-                                Text("[SUBMIT CODE / TOKEN]", fontFamily = FontFamily.Monospace, fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                            }
-
-                            OutlinedButton(
-                                onClick = {
-                                    val success = viewModel.importTokenFromDownloads()
-                                    if (success) {
-                                        Toast.makeText(context, "Token loaded from Downloads", Toast.LENGTH_SHORT).show()
-                                    } else {
-                                        Toast.makeText(context, "No token found in Downloads", Toast.LENGTH_SHORT).show()
-                                    }
-                                },
-                                border = BorderStroke(1.dp, AgBorder),
-                                shape = RoundedCornerShape(2.dp),
-                                colors = ButtonDefaults.outlinedButtonColors(contentColor = AgTextSecondary)
-                            ) {
-                                Text("[IMPORT DOWNLOADS]", fontFamily = FontFamily.Monospace, fontSize = 11.sp)
-                            }
-                        }
-
-                        // --- SAVED ACCOUNTS ---
-                        SectionHeader("SAVED PROFILES")
-
-                        if (uiState.accounts.isEmpty()) {
-                            Text(
-                                text = "No saved profiles yet. Token is loaded from Downloads or active session.",
-                                color = AgTerminalDim,
-                                fontFamily = FontFamily.Monospace,
-                                fontSize = 11.sp
-                            )
-                        } else {
-                            uiState.accounts.forEach { account ->
-                                Row(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .border(1.dp, if (account.isCurrent) AgTerminalPrompt else AgBorder)
-                                        .padding(8.dp),
-                                    horizontalArrangement = Arrangement.SpaceBetween,
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    Column(modifier = Modifier.weight(1f)) {
-                                        val display = account.email.ifBlank { account.name }
-                                        Text(
-                                            text = "> $display ${if (account.isCurrent) "[ACTIVE]" else ""}",
-                                            color = if (account.isCurrent) AgTerminalPrompt else AgTextPrimary,
-                                            fontFamily = FontFamily.Monospace,
-                                            fontWeight = FontWeight.Bold,
-                                            fontSize = 12.sp
-                                        )
-                                        Text(
-                                            text = "  token: ${account.token.take(24)}...",
-                                            color = AgTextSecondary,
-                                            fontFamily = FontFamily.Monospace,
-                                            fontSize = 10.sp
-                                        )
-                                    }
-
-                                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                                        if (!account.isCurrent) {
-                                            Text(
-                                                text = "[SWITCH]",
-                                                color = AgTerminalGreen,
-                                                fontFamily = FontFamily.Monospace,
-                                                fontSize = 11.sp,
-                                                modifier = Modifier.clickable { viewModel.switchAccount(account.id) }
-                                            )
-                                        }
-                                        Text(
-                                            text = "[DEL]",
-                                            color = AgError,
-                                            fontFamily = FontFamily.Monospace,
-                                            fontSize = 11.sp,
-                                            modifier = Modifier.clickable { viewModel.deleteAccount(account.id) }
-                                        )
-                                    }
-                                }
-                            }
-                        }
-
-                        HorizontalDivider(color = AgSeparator, thickness = 1.dp)
-
-                        // --- SECTION 2: QUOTA AND LIMITS (BELOW) ---
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            SectionHeader("QUOTA AND LIMITS")
-                            Text(
-                                text = if (uiState.isSyncingQuota) "[SYNCING...]" else "[SYNC QUOTA]",
-                                color = if (uiState.isSyncingQuota) AgTerminalAmber else AgTerminalPrompt,
-                                fontFamily = FontFamily.Monospace,
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 11.sp,
-                                modifier = Modifier.clickable(enabled = !uiState.isSyncingQuota) {
-                                    viewModel.syncQuota()
-                                }
-                            )
-                        }
-
-                        Column(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(vertical = 4.dp),
-                            verticalArrangement = Arrangement.spacedBy(12.dp)
-                        ) {
-                            if (uiState.quotaSummary.groups.isNotEmpty()) {
-                                uiState.quotaSummary.groups.forEach { group ->
-                                    Text(
-                                        text = group.displayName.uppercase(),
-                                        color = AgTextPrimary,
-                                        fontFamily = FontFamily.Monospace,
-                                        fontWeight = FontWeight.Bold,
-                                        fontSize = 13.sp
-                                    )
-                                    if (group.description.isNotBlank()) {
-                                        Text(
-                                            text = "  ${group.description}",
-                                            color = AgTextSecondary,
-                                            fontFamily = FontFamily.Monospace,
-                                            fontSize = 11.sp
-                                        )
-                                    }
-                                    group.buckets.forEach { bucket ->
-                                        AsciiQuotaBlock(
-                                            label = bucket.displayName,
-                                            percent = bucket.remainingPercent,
-                                            refreshesIn = bucket.getRefreshText(),
-                                            isYellow = bucket.remainingPercent < 50f
-                                        )
-                                    }
-                                    Spacer(modifier = Modifier.height(2.dp))
-                                }
-                            } else {
-                                // Default display matching Screenshot 2 until first sync
-                                Text(
-                                    text = "GEMINI MODELS",
-                                    color = AgTextPrimary,
-                                    fontFamily = FontFamily.Monospace,
-                                    fontWeight = FontWeight.Bold,
-                                    fontSize = 13.sp
-                                )
-                                Text(
-                                    text = "  Models within this group: Gemini Flash, Gemini Pro",
-                                    color = AgTextSecondary,
-                                    fontFamily = FontFamily.Monospace,
-                                    fontSize = 11.sp
-                                )
-                                AsciiQuotaBlock(
-                                    label = "Weekly Limit Remaining",
-                                    percent = 100f,
-                                    refreshesIn = "Refreshes in 168h 0m",
-                                    isYellow = false
-                                )
-                                AsciiQuotaBlock(
-                                    label = "Five Hour Limit Remaining",
-                                    percent = ((uiState.usageStats.remainingPercent)).coerceIn(10f, 100f),
-                                    refreshesIn = "Refreshes in 4h 52m",
-                                    isYellow = uiState.usageStats.remainingPercent < 50f
-                                )
-
-                                Spacer(modifier = Modifier.height(4.dp))
-
-                                Text(
-                                    text = "CLAUDE AND GPT MODELS",
-                                    color = AgTextPrimary,
-                                    fontFamily = FontFamily.Monospace,
-                                    fontWeight = FontWeight.Bold,
-                                    fontSize = 13.sp
-                                )
-                                Text(
-                                    text = "  Models within this group: Claude Opus, Claude Sonnet, GPT-OSS",
-                                    color = AgTextSecondary,
-                                    fontFamily = FontFamily.Monospace,
-                                    fontSize = 11.sp
-                                )
-                                AsciiQuotaBlock(
-                                    label = "Weekly Limit Remaining",
-                                    percent = 94.06f,
-                                    refreshesIn = "Refreshes in 162h 37m",
-                                    isYellow = false
-                                )
-                                AsciiQuotaBlock(
-                                    label = "Five Hour Limit Remaining",
-                                    percent = 95.99f,
-                                    refreshesIn = "Refreshes in 4h 37m",
-                                    isYellow = false
-                                )
-                            }
-
-                            // Active Context details
-                            Text(
-                                text = "ACTIVE CONTEXT OCCUPANCY",
-                                color = AgTextPrimary,
-                                fontFamily = FontFamily.Monospace,
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 13.sp
-                            )
-                            AsciiQuotaBlock(
-                                label = "Context Window (${uiState.activeModel})",
-                                percent = uiState.usageStats.remainingPercent,
-                                refreshesIn = "Free: ${String.format(java.util.Locale.US, "%,d", uiState.usageStats.remainingContextTokens).replace(',', ' ')} / ${String.format(java.util.Locale.US, "%,d", uiState.usageStats.contextWindowLimit).replace(',', ' ')} tokens",
-                                isYellow = uiState.usageStats.remainingPercent < 40f
-                            )
-
-                            Text(
-                                text = "Tier: ${uiState.usageStats.tierName} — Unlimited Quota",
-                                color = AgTerminalGreen,
-                                fontFamily = FontFamily.Monospace,
-                                fontSize = 11.sp
-                            )
-                        }
                     }
-
-                // ==================== TAB 2: HISTORY ====================
-                SettingsSubTab.HISTORY -> {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        SectionHeader("CHAT SESSIONS")
-                        OutlinedButton(
-                            onClick = {
-                                viewModel.createNewChat()
-                                onCloseSettings()
-                            },
-                            border = BorderStroke(1.dp, AgTerminalGreen),
-                            shape = RoundedCornerShape(2.dp),
-                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
-                            colors = ButtonDefaults.outlinedButtonColors(contentColor = AgTerminalGreen)
-                        ) {
-                            Text("[+ NEW CHAT]", fontFamily = FontFamily.Monospace, fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                        }
-                    }
-
-                    if (uiState.sessions.isEmpty()) {
-                        Text(
-                            text = "No saved chat sessions found.",
-                            color = AgTerminalDim,
-                            fontFamily = FontFamily.Monospace,
-                            fontSize = 12.sp
+                    SettingsSubTab.HISTORY -> {
+                        HistoryTabContent(
+                            viewModel = viewModel,
+                            uiState = uiState,
+                            onCloseSettings = onCloseSettings
                         )
-                    } else {
-                        uiState.sessions.forEach { session ->
-                            val isActive = session.id == uiState.currentSessionId
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .border(1.dp, if (isActive) AgTerminalPrompt else AgBorder)
-                                    .clickable {
-                                        viewModel.switchChat(session.id)
-                                        onCloseSettings()
-                                    }
-                                    .padding(10.dp),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Column(modifier = Modifier.weight(1f)) {
-                                    Text(
-                                        text = "> ${session.title} ${if (isActive) "[CURRENT]" else ""}",
-                                        color = if (isActive) AgTerminalPrompt else AgTextPrimary,
-                                        fontFamily = FontFamily.Monospace,
-                                        fontWeight = FontWeight.Bold,
-                                        fontSize = 12.sp
-                                    )
-                                    Text(
-                                        text = "  model: ${session.model} | messages: ${session.messages.size}",
-                                        color = AgTextSecondary,
-                                        fontFamily = FontFamily.Monospace,
-                                        fontSize = 10.sp
-                                    )
-                                }
-
-                                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                    Text(
-                                        text = "[LOAD]",
-                                        color = AgTerminalPrompt,
-                                        fontFamily = FontFamily.Monospace,
-                                        fontSize = 11.sp,
-                                        modifier = Modifier.clickable {
-                                            viewModel.switchChat(session.id)
-                                            onCloseSettings()
-                                        }
-                                    )
-                                    Text(
-                                        text = "[DEL]",
-                                        color = AgError,
-                                        fontFamily = FontFamily.Monospace,
-                                        fontSize = 11.sp,
-                                        modifier = Modifier.clickable {
-                                            viewModel.deleteChat(session.id)
-                                        }
-                                    )
-                                }
-                            }
-                        }
                     }
+                    SettingsSubTab.ADVANCED -> {
+                        AdvancedTabContent(
+                            viewModel = viewModel,
+                            uiState = uiState,
+                            onOpenWorkspaceDialog = { showWorkspaceDialog = true }
+                        )
+                    }
+                    SettingsSubTab.MENU -> {}
                 }
-
-                // ==================== TAB 3: ADVANCED SETTINGS ====================
-                SettingsSubTab.ADVANCED -> {
-                    SectionHeader("SYSTEM PRIVILEGES")
-
-                    // 1. ROOT ACCESS
-                    PrivilegeBlock(
-                        title = "ROOT ACCESS (su)",
-                        status = if (uiState.isRootGranted) "[GRANTED]" else if (uiState.isRootAvailable) "[NOT GRANTED]" else "[NO SU BINARY]",
-                        statusColor = if (uiState.isRootGranted) AgTerminalGreen else if (uiState.isRootAvailable) AgTerminalAmber else AgTextSecondary,
-                        description = "Direct root shell access for unrestricted Linux operations on Android.",
-                        actionButtonText = if (uiState.isRootGranted) "[VERIFIED]" else "[REQUEST ROOT]",
-                        onAction = {
-                            if (!uiState.isRootGranted) {
-                                viewModel.grantStorageViaRoot()
-                            }
-                        },
-                        testButtonText = "[TEST ROOT (id)]",
-                        onTest = { viewModel.testRootCommand() }
-                    )
-
-                    // 2. ADB / SHIZUKU ACCESS
-                    PrivilegeBlock(
-                        title = "ADB ACCESS (Shizuku)",
-                        status = if (uiState.isShizukuGranted) "[GRANTED]" else if (uiState.isShizukuInstalled) "[INSTALLED]" else "[NOT INSTALLED]",
-                        statusColor = if (uiState.isShizukuGranted) AgTerminalGreen else if (uiState.isShizukuInstalled) AgTerminalAmber else AgTextSecondary,
-                        description = "Enables agent to execute system ADB commands via Shizuku service without root.",
-                        actionButtonText = if (uiState.isShizukuGranted) "[VERIFIED]" else "[REQUEST SHIZUKU]",
-                        onAction = { viewModel.requestShizukuPermission() },
-                        testButtonText = "[TEST ADB (getprop)]",
-                        onTest = { viewModel.testShizukuCommand() }
-                    )
-
-                    // 3. STORAGE ACCESS
-                    PrivilegeBlock(
-                        title = "STORAGE ACCESS (All Files)",
-                        status = if (uiState.isStorageGranted) "[GRANTED]" else "[NOT GRANTED]",
-                        statusColor = if (uiState.isStorageGranted) AgTerminalGreen else AgError,
-                        description = "Required to read and modify audio, scripts, and downloads on /storage/emulated/0.",
-                        actionButtonText = "[REQUEST STORAGE ACCESS]",
-                        onAction = { viewModel.requestStoragePermission() }
-                    )
-
-                    // Command result banner if tested
-                    uiState.systemCommandResult?.let { result ->
-                        Column(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .border(1.dp, AgTerminalPrompt)
-                                .padding(8.dp)
-                        ) {
-                            Text(
-                                text = "OUTPUT:",
-                                color = AgTerminalPrompt,
-                                fontFamily = FontFamily.Monospace,
-                                fontSize = 11.sp,
-                                fontWeight = FontWeight.Bold
-                            )
-                            Text(
-                                text = result,
-                                color = AgTextPrimary,
-                                fontFamily = FontFamily.Monospace,
-                                fontSize = 11.sp
-                            )
-                        }
-                    }
-
-                    HorizontalDivider(color = AgSeparator, thickness = 1.dp)
-
-                    // 4. AUTO-APPROVE COMMANDS
-                    SectionHeader("EXECUTION PERMISSION MODE")
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .border(1.dp, AgBorder)
-                            .padding(10.dp),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(
-                                text = "Auto-approve agent tool commands",
-                                color = AgTextPrimary,
-                                fontFamily = FontFamily.Monospace,
-                                fontSize = 12.sp,
-                                fontWeight = FontWeight.Bold
-                            )
-                            Text(
-                                text = "--dangerously-skip-permissions: ${if (uiState.autoApprove) "ON" else "OFF"}",
-                                color = if (uiState.autoApprove) AgTerminalGreen else AgTerminalAmber,
-                                fontFamily = FontFamily.Monospace,
-                                fontSize = 10.sp
-                            )
-                        }
-
-                        OutlinedButton(
-                            onClick = { viewModel.toggleAutoApprove() },
-                            border = BorderStroke(1.dp, if (uiState.autoApprove) AgTerminalGreen else AgTerminalAmber),
-                            shape = RoundedCornerShape(2.dp),
-                            colors = ButtonDefaults.outlinedButtonColors(
-                                contentColor = if (uiState.autoApprove) AgTerminalGreen else AgTerminalAmber
-                            )
-                        ) {
-                            Text(
-                                text = if (uiState.autoApprove) "[ON]" else "[OFF]",
-                                fontFamily = FontFamily.Monospace,
-                                fontSize = 11.sp,
-                                fontWeight = FontWeight.Bold
-                            )
-                        }
-                    }
-
-                    HorizontalDivider(color = AgSeparator, thickness = 1.dp)
-
-                    // 5. WORKSPACE DIRECTORY
-                    SectionHeader("PROJECT WORKSPACE")
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .border(1.dp, AgBorder)
-                            .padding(10.dp),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(
-                                text = uiState.workspacePath,
-                                color = AgTextPrimary,
-                                fontFamily = FontFamily.Monospace,
-                                fontSize = 11.sp
-                            )
-                        }
-
-                        OutlinedButton(
-                            onClick = { showWorkspaceDialog = true },
-                            border = BorderStroke(1.dp, AgTerminalPrompt),
-                            shape = RoundedCornerShape(2.dp),
-                            colors = ButtonDefaults.outlinedButtonColors(contentColor = AgTerminalPrompt)
-                        ) {
-                            Text("[CHANGE DIR]", fontFamily = FontFamily.Monospace, fontSize = 11.sp)
-                        }
-                    }
-
-                    HorizontalDivider(color = AgSeparator, thickness = 1.dp)
-
-                    // 6. SYSTEM & ENGINE LOGGING (User Request)
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        SectionHeader("SYSTEM & ENGINE LOGS")
-                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            Text(
-                                text = "[COPY]",
-                                color = AgTerminalPrompt,
-                                fontFamily = FontFamily.Monospace,
-                                fontSize = 11.sp,
-                                modifier = Modifier.clickable {
-                                    val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager
-                                    val clip = ClipData.newPlainText("Antigravity Logs", uiState.liveLogs.joinToString("\n"))
-                                    clipboard?.setPrimaryClip(clip)
-                                    Toast.makeText(context, "Logs copied to clipboard", Toast.LENGTH_SHORT).show()
-                                }
-                            )
-                            Text(
-                                text = "[EXPORT]",
-                                color = AgTerminalGreen,
-                                fontFamily = FontFamily.Monospace,
-                                fontSize = 11.sp,
-                                modifier = Modifier.clickable {
-                                    val path = viewModel.exportLogsToDownloads(context)
-                                    Toast.makeText(context, "Saved to $path", Toast.LENGTH_LONG).show()
-                                }
-                            )
-                        }
-                    }
-
-                    // Monospace terminal log box
-                    val logBoxState = rememberLazyListState()
-                    LaunchedEffect(uiState.liveLogs.size) {
-                        if (uiState.liveLogs.isNotEmpty()) {
-                            logBoxState.scrollToItem(uiState.liveLogs.size - 1)
-                        }
-                    }
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(240.dp)
-                            .background(Color(0xFF0A0A0A))
-                            .border(1.dp, AgBorder)
-                            .padding(8.dp)
-                    ) {
-                        if (uiState.liveLogs.isEmpty()) {
-                            Text(
-                                text = "> Logs will appear here as engine and commands execute...",
-                                color = AgTerminalDim,
-                                fontFamily = FontFamily.Monospace,
-                                fontSize = 10.sp
-                            )
-                        } else {
-                            LazyColumn(
-                                state = logBoxState,
-                                modifier = Modifier.fillMaxSize()
-                            ) {
-                                items(uiState.liveLogs) { line ->
-                                    val textColor = when {
-                                        line.contains("ERR", ignoreCase = true) || line.contains("failed", ignoreCase = true) -> AgError
-                                        line.contains("SUCCESS", ignoreCase = true) || line.contains("OK", ignoreCase = true) -> AgTerminalGreen
-                                        line.contains("STDERR", ignoreCase = true) -> AgTerminalAmber
-                                        else -> AgTextSecondary
-                                    }
-                                    Text(
-                                        text = line,
-                                        color = textColor,
-                                        fontFamily = FontFamily.Monospace,
-                                        fontSize = 10.sp,
-                                        lineHeight = 14.sp
-                                    )
-                                }
-                            }
-                        }
-                    }
-                }
-                SettingsSubTab.MENU -> {}
             }
         }
     }
-}
 
     if (showWorkspaceDialog) {
         WorkspacePickerDialog(
@@ -898,28 +177,772 @@ fun ControlCenterScreen(
 }
 
 @Composable
-private fun TabButton(
-    title: String,
-    isSelected: Boolean,
-    onClick: () -> Unit,
-    modifier: Modifier = Modifier
+private fun SettingsMenuList(
+    onCloseSettings: () -> Unit,
+    onSelectTab: (SettingsSubTab) -> Unit,
+    scrollState: androidx.compose.foundation.ScrollState
 ) {
-    OutlinedButton(
-        onClick = onClick,
-        border = BorderStroke(1.dp, if (isSelected) AgTerminalPrompt else AgBorder),
-        shape = RoundedCornerShape(2.dp),
-        colors = ButtonDefaults.outlinedButtonColors(
-            contentColor = if (isSelected) AgTerminalPrompt else AgTextSecondary
-        ),
-        contentPadding = PaddingValues(horizontal = 6.dp, vertical = 6.dp),
-        modifier = modifier
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .verticalScroll(scrollState)
+            .padding(vertical = 4.dp),
+        verticalArrangement = Arrangement.spacedBy(14.dp)
     ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = "SETTINGS & SYSTEM",
+                color = AgTerminalPrompt,
+                fontFamily = FontFamily.Monospace,
+                fontWeight = FontWeight.Bold,
+                fontSize = 14.sp
+            )
+            Text(
+                text = "[CHAT]",
+                color = AgTerminalGreen,
+                fontFamily = FontFamily.Monospace,
+                fontWeight = FontWeight.Bold,
+                fontSize = 12.sp,
+                modifier = Modifier.clickable { onCloseSettings() }
+            )
+        }
+
         Text(
-            text = title,
+            text = "Select a category to view full-screen parameters:",
+            color = AgTextSecondary,
             fontFamily = FontFamily.Monospace,
-            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
             fontSize = 11.sp
         )
+
+        HorizontalDivider(color = AgSeparator, thickness = 1.dp)
+
+        SettingsCategoryCard(
+            index = "1",
+            title = "ACCOUNTS & QUOTA",
+            subtitle = "Google authorization, saved profiles switcher & live API quota limits",
+            onClick = { onSelectTab(SettingsSubTab.ACCOUNTS) }
+        )
+
+        SettingsCategoryCard(
+            index = "2",
+            title = "CHAT HISTORY",
+            subtitle = "Browse saved conversation sessions, resume previous chats or delete",
+            onClick = { onSelectTab(SettingsSubTab.HISTORY) }
+        )
+
+        SettingsCategoryCard(
+            index = "3",
+            title = "ADVANCED SETTINGS",
+            subtitle = "Root access, ADB / Shizuku privileges, workspace permissions & live system logs",
+            onClick = { onSelectTab(SettingsSubTab.ADVANCED) }
+        )
+
+        Spacer(modifier = Modifier.height(16.dp))
+
+        OutlinedButton(
+            onClick = onCloseSettings,
+            border = BorderStroke(1.dp, AgBorder),
+            shape = RoundedCornerShape(2.dp),
+            colors = ButtonDefaults.outlinedButtonColors(contentColor = AgTerminalPrompt),
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Text(
+                text = "[< RETURN TO TERMINAL CHAT]",
+                fontFamily = FontFamily.Monospace,
+                fontWeight = FontWeight.Bold,
+                fontSize = 12.sp
+            )
+        }
+    }
+}
+
+@Composable
+private fun AccountsTabContent(
+    viewModel: ChatViewModel,
+    uiState: ChatUiState,
+    tokenInput: String,
+    onTokenInputChange: (String) -> Unit
+) {
+    val context = LocalContext.current
+
+    // --- SECTION 1: GOOGLE OAUTH LOGIN & ACTIVE ACCOUNT (TOP) ---
+    SectionHeader("ACTIVE ACCOUNT & GOOGLE LOGIN")
+
+    val displayEmail = uiState.activeAccountEmail.ifBlank { "Default Account" }
+    Text(
+        text = "Active: $displayEmail",
+        color = if (uiState.activeAccountEmail.isNotBlank()) AgTerminalGreen else AgTextPrimary,
+        fontFamily = FontFamily.Monospace,
+        fontWeight = FontWeight.Bold,
+        fontSize = 12.sp
+    )
+    Text(
+        text = "Token: ${uiState.currentTokenSnippet}",
+        color = AgTextSecondary,
+        fontFamily = FontFamily.Monospace,
+        fontSize = 11.sp
+    )
+
+    Text(
+        text = "Generate browser login link or paste authorization code / token:",
+        color = AgTextSecondary,
+        fontFamily = FontFamily.Monospace,
+        fontSize = 11.sp
+    )
+
+    OutlinedButton(
+        onClick = { viewModel.requestAuthUrl() },
+        enabled = !uiState.isGeneratingAuthUrl,
+        border = BorderStroke(1.dp, AgTerminalPrompt),
+        shape = RoundedCornerShape(2.dp),
+        colors = ButtonDefaults.outlinedButtonColors(contentColor = AgTerminalPrompt),
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Text(
+            text = if (uiState.isGeneratingAuthUrl) "[GENERATING URL...]" else "[GENERATE LOGIN URL]",
+            fontFamily = FontFamily.Monospace,
+            fontWeight = FontWeight.Bold,
+            fontSize = 12.sp
+        )
+    }
+
+    uiState.generatedAuthUrl?.let { url ->
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .border(1.dp, AgBorder)
+                .padding(8.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
+            Text(
+                text = url.take(120) + "...",
+                color = AgTerminalDim,
+                fontFamily = FontFamily.Monospace,
+                fontSize = 10.sp
+            )
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                OutlinedButton(
+                    onClick = {
+                        try {
+                            val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url)).apply {
+                                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                            }
+                            context.startActivity(intent)
+                        } catch (e: Exception) {
+                            Toast.makeText(context, "Error: ${e.message}", Toast.LENGTH_SHORT).show()
+                        }
+                    },
+                    border = BorderStroke(1.dp, AgTerminalPrompt),
+                    shape = RoundedCornerShape(2.dp),
+                    colors = ButtonDefaults.outlinedButtonColors(contentColor = AgTerminalPrompt),
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Text("[OPEN IN BROWSER]", fontFamily = FontFamily.Monospace, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                }
+
+                OutlinedButton(
+                    onClick = {
+                        val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                        clipboard.setPrimaryClip(ClipData.newPlainText("Auth URL", url))
+                        Toast.makeText(context, "URL copied to clipboard", Toast.LENGTH_SHORT).show()
+                    },
+                    border = BorderStroke(1.dp, AgBorder),
+                    shape = RoundedCornerShape(2.dp),
+                    colors = ButtonDefaults.outlinedButtonColors(contentColor = AgTextSecondary)
+                ) {
+                    Text("[COPY URL]", fontFamily = FontFamily.Monospace, fontSize = 11.sp)
+                }
+            }
+        }
+    }
+
+    // Direct Code / Token Input
+    TextField(
+        value = tokenInput,
+        onValueChange = onTokenInputChange,
+        placeholder = {
+            Text("paste auth code (4/0A...) or token json...", color = AgTerminalDim, fontSize = 12.sp, fontFamily = FontFamily.Monospace)
+        },
+        colors = TextFieldDefaults.colors(
+            focusedContainerColor = AgSurfaceVariant,
+            unfocusedContainerColor = AgSurfaceVariant,
+            focusedTextColor = AgTextPrimary,
+            unfocusedTextColor = AgTextPrimary,
+            focusedIndicatorColor = AgTerminalPrompt,
+            unfocusedIndicatorColor = AgBorder
+        ),
+        textStyle = LocalTextStyle.current.copy(fontFamily = FontFamily.Monospace, fontSize = 11.sp),
+        modifier = Modifier.fillMaxWidth()
+    )
+
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        OutlinedButton(
+            onClick = {
+                if (tokenInput.isNotBlank()) {
+                    val input = tokenInput.trim()
+                    if (input.startsWith("{") || input.contains("access_token")) {
+                        viewModel.saveAccount("Default Account", input)
+                        Toast.makeText(context, "Token saved and activated", Toast.LENGTH_SHORT).show()
+                    } else {
+                        Toast.makeText(context, "Exchanging auth code with Google...", Toast.LENGTH_SHORT).show()
+                        viewModel.submitAuthCode(input) { success ->
+                            if (success) {
+                                Toast.makeText(context, "Google OAuth success!", Toast.LENGTH_LONG).show()
+                            } else {
+                                Toast.makeText(context, "Auth code exchange failed. Please generate new URL.", Toast.LENGTH_LONG).show()
+                            }
+                        }
+                    }
+                    onTokenInputChange("")
+                }
+            },
+            border = BorderStroke(1.dp, AgTerminalPrompt),
+            shape = RoundedCornerShape(2.dp),
+            colors = ButtonDefaults.outlinedButtonColors(contentColor = AgTerminalPrompt),
+            modifier = Modifier.weight(1f)
+        ) {
+            Text("[SUBMIT CODE / TOKEN]", fontFamily = FontFamily.Monospace, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+        }
+
+        OutlinedButton(
+            onClick = {
+                val success = viewModel.importTokenFromDownloads()
+                if (success) {
+                    Toast.makeText(context, "Token loaded from Downloads", Toast.LENGTH_SHORT).show()
+                } else {
+                    Toast.makeText(context, "No token found in Downloads", Toast.LENGTH_SHORT).show()
+                }
+            },
+            border = BorderStroke(1.dp, AgBorder),
+            shape = RoundedCornerShape(2.dp),
+            colors = ButtonDefaults.outlinedButtonColors(contentColor = AgTextSecondary)
+        ) {
+            Text("[IMPORT DOWNLOADS]", fontFamily = FontFamily.Monospace, fontSize = 11.sp)
+        }
+    }
+
+    // --- SAVED ACCOUNTS ---
+    SectionHeader("SAVED PROFILES")
+
+    if (uiState.accounts.isEmpty()) {
+        Text(
+            text = "No saved profiles yet. Token is loaded from Downloads or active session.",
+            color = AgTerminalDim,
+            fontFamily = FontFamily.Monospace,
+            fontSize = 11.sp
+        )
+    } else {
+        uiState.accounts.forEach { account ->
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .border(1.dp, if (account.isCurrent) AgTerminalPrompt else AgBorder)
+                    .padding(8.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    val display = account.email.ifBlank { account.name }
+                    Text(
+                        text = "> $display ${if (account.isCurrent) "[ACTIVE]" else ""}",
+                        color = if (account.isCurrent) AgTerminalPrompt else AgTextPrimary,
+                        fontFamily = FontFamily.Monospace,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 12.sp
+                    )
+                    Text(
+                        text = "  token: ${account.token.take(24)}...",
+                        color = AgTextSecondary,
+                        fontFamily = FontFamily.Monospace,
+                        fontSize = 10.sp
+                    )
+                }
+
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    if (!account.isCurrent) {
+                        Text(
+                            text = "[SWITCH]",
+                            color = AgTerminalGreen,
+                            fontFamily = FontFamily.Monospace,
+                            fontSize = 11.sp,
+                            modifier = Modifier.clickable { viewModel.switchAccount(account.id) }
+                        )
+                    }
+                    Text(
+                        text = "[DEL]",
+                        color = AgError,
+                        fontFamily = FontFamily.Monospace,
+                        fontSize = 11.sp,
+                        modifier = Modifier.clickable { viewModel.deleteAccount(account.id) }
+                    )
+                }
+            }
+        }
+    }
+
+    HorizontalDivider(color = AgSeparator, thickness = 1.dp)
+
+    // --- SECTION 2: QUOTA AND LIMITS (BELOW) ---
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        SectionHeader("QUOTA AND LIMITS")
+        Text(
+            text = if (uiState.isSyncingQuota) "[SYNCING...]" else "[SYNC QUOTA]",
+            color = if (uiState.isSyncingQuota) AgTerminalAmber else AgTerminalPrompt,
+            fontFamily = FontFamily.Monospace,
+            fontWeight = FontWeight.Bold,
+            fontSize = 11.sp,
+            modifier = Modifier.clickable(enabled = !uiState.isSyncingQuota) {
+                viewModel.syncQuota()
+            }
+        )
+    }
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 4.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        if (uiState.quotaSummary.groups.isNotEmpty()) {
+            uiState.quotaSummary.groups.forEach { group ->
+                Text(
+                    text = group.displayName.uppercase(),
+                    color = AgTextPrimary,
+                    fontFamily = FontFamily.Monospace,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 13.sp
+                )
+                if (group.description.isNotBlank()) {
+                    Text(
+                        text = "  ${group.description}",
+                        color = AgTextSecondary,
+                        fontFamily = FontFamily.Monospace,
+                        fontSize = 11.sp
+                    )
+                }
+                group.buckets.forEach { bucket ->
+                    AsciiQuotaBlock(
+                        label = bucket.displayName,
+                        percent = bucket.remainingPercent,
+                        refreshesIn = bucket.getRefreshText(),
+                        isYellow = bucket.remainingPercent < 50f
+                    )
+                }
+                Spacer(modifier = Modifier.height(2.dp))
+            }
+        } else {
+            // Default display matching Screenshot 2 until first sync
+            Text(
+                text = "GEMINI MODELS",
+                color = AgTextPrimary,
+                fontFamily = FontFamily.Monospace,
+                fontWeight = FontWeight.Bold,
+                fontSize = 13.sp
+            )
+            Text(
+                text = "  Models within this group: Gemini Flash, Gemini Pro",
+                color = AgTextSecondary,
+                fontFamily = FontFamily.Monospace,
+                fontSize = 11.sp
+            )
+            AsciiQuotaBlock(
+                label = "Weekly Limit Remaining",
+                percent = 100f,
+                refreshesIn = "Refreshes in 168h 0m",
+                isYellow = false
+            )
+            AsciiQuotaBlock(
+                label = "Five Hour Limit Remaining",
+                percent = ((uiState.usageStats.remainingPercent)).coerceIn(10f, 100f),
+                refreshesIn = "Refreshes in 4h 52m",
+                isYellow = uiState.usageStats.remainingPercent < 50f
+            )
+
+            Spacer(modifier = Modifier.height(4.dp))
+
+            Text(
+                text = "CLAUDE AND GPT MODELS",
+                color = AgTextPrimary,
+                fontFamily = FontFamily.Monospace,
+                fontWeight = FontWeight.Bold,
+                fontSize = 13.sp
+            )
+            Text(
+                text = "  Models within this group: Claude Opus, Claude Sonnet, GPT-OSS",
+                color = AgTextSecondary,
+                fontFamily = FontFamily.Monospace,
+                fontSize = 11.sp
+            )
+            AsciiQuotaBlock(
+                label = "Weekly Limit Remaining",
+                percent = 94.06f,
+                refreshesIn = "Refreshes in 162h 37m",
+                isYellow = false
+            )
+            AsciiQuotaBlock(
+                label = "Five Hour Limit Remaining",
+                percent = 95.99f,
+                refreshesIn = "Refreshes in 4h 37m",
+                isYellow = false
+            )
+        }
+
+        // Active Context details
+        Text(
+            text = "ACTIVE CONTEXT OCCUPANCY",
+            color = AgTextPrimary,
+            fontFamily = FontFamily.Monospace,
+            fontWeight = FontWeight.Bold,
+            fontSize = 13.sp
+        )
+        AsciiQuotaBlock(
+            label = "Context Window (${uiState.activeModel})",
+            percent = uiState.usageStats.remainingPercent,
+            refreshesIn = "Free: ${String.format(java.util.Locale.US, "%,d", uiState.usageStats.remainingContextTokens).replace(',', ' ')} / ${String.format(java.util.Locale.US, "%,d", uiState.usageStats.contextWindowLimit).replace(',', ' ')} tokens",
+            isYellow = uiState.usageStats.remainingPercent < 40f
+        )
+
+        Text(
+            text = "Tier: ${uiState.usageStats.tierName} — Unlimited Quota",
+            color = AgTerminalGreen,
+            fontFamily = FontFamily.Monospace,
+            fontSize = 11.sp
+        )
+    }
+}
+
+@Composable
+private fun HistoryTabContent(
+    viewModel: ChatViewModel,
+    uiState: ChatUiState,
+    onCloseSettings: () -> Unit
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        SectionHeader("CHAT SESSIONS")
+        OutlinedButton(
+            onClick = {
+                viewModel.createNewChat()
+                onCloseSettings()
+            },
+            border = BorderStroke(1.dp, AgTerminalGreen),
+            shape = RoundedCornerShape(2.dp),
+            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
+            colors = ButtonDefaults.outlinedButtonColors(contentColor = AgTerminalGreen)
+        ) {
+            Text("[+ NEW CHAT]", fontFamily = FontFamily.Monospace, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+        }
+    }
+
+    if (uiState.sessions.isEmpty()) {
+        Text(
+            text = "No saved chat sessions found.",
+            color = AgTerminalDim,
+            fontFamily = FontFamily.Monospace,
+            fontSize = 12.sp
+        )
+    } else {
+        uiState.sessions.forEach { session ->
+            val isActive = session.id == uiState.currentSessionId
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .border(1.dp, if (isActive) AgTerminalPrompt else AgBorder)
+                    .clickable {
+                        viewModel.switchChat(session.id)
+                        onCloseSettings()
+                    }
+                    .padding(10.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = "> ${session.title} ${if (isActive) "[CURRENT]" else ""}",
+                        color = if (isActive) AgTerminalPrompt else AgTextPrimary,
+                        fontFamily = FontFamily.Monospace,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 12.sp
+                    )
+                    Text(
+                        text = "  model: ${session.model} | messages: ${session.messages.size}",
+                        color = AgTextSecondary,
+                        fontFamily = FontFamily.Monospace,
+                        fontSize = 10.sp
+                    )
+                }
+
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(
+                        text = "[LOAD]",
+                        color = AgTerminalPrompt,
+                        fontFamily = FontFamily.Monospace,
+                        fontSize = 11.sp,
+                        modifier = Modifier.clickable {
+                            viewModel.switchChat(session.id)
+                            onCloseSettings()
+                        }
+                    )
+                    Text(
+                        text = "[DEL]",
+                        color = AgError,
+                        fontFamily = FontFamily.Monospace,
+                        fontSize = 11.sp,
+                        modifier = Modifier.clickable {
+                            viewModel.deleteChat(session.id)
+                        }
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun AdvancedTabContent(
+    viewModel: ChatViewModel,
+    uiState: ChatUiState,
+    onOpenWorkspaceDialog: () -> Unit
+) {
+    val context = LocalContext.current
+
+    SectionHeader("SYSTEM PRIVILEGES")
+
+    // 1. ROOT ACCESS
+    PrivilegeBlock(
+        title = "ROOT ACCESS (su)",
+        status = if (uiState.isRootGranted) "[GRANTED]" else if (uiState.isRootAvailable) "[NOT GRANTED]" else "[NO SU BINARY]",
+        statusColor = if (uiState.isRootGranted) AgTerminalGreen else if (uiState.isRootAvailable) AgTerminalAmber else AgTextSecondary,
+        description = "Direct root shell access for unrestricted Linux operations on Android.",
+        actionButtonText = if (uiState.isRootGranted) "[VERIFIED]" else "[REQUEST ROOT]",
+        onAction = {
+            if (!uiState.isRootGranted) {
+                viewModel.grantStorageViaRoot()
+            }
+        },
+        testButtonText = "[TEST ROOT (id)]",
+        onTest = { viewModel.testRootCommand() }
+    )
+
+    // 2. ADB / SHIZUKU ACCESS
+    PrivilegeBlock(
+        title = "ADB ACCESS (Shizuku)",
+        status = if (uiState.isShizukuGranted) "[GRANTED]" else if (uiState.isShizukuInstalled) "[INSTALLED]" else "[NOT INSTALLED]",
+        statusColor = if (uiState.isShizukuGranted) AgTerminalGreen else if (uiState.isShizukuInstalled) AgTerminalAmber else AgTextSecondary,
+        description = "Enables agent to execute system ADB commands via Shizuku service without root.",
+        actionButtonText = if (uiState.isShizukuGranted) "[VERIFIED]" else "[REQUEST SHIZUKU]",
+        onAction = { viewModel.requestShizukuPermission() },
+        testButtonText = "[TEST ADB (getprop)]",
+        onTest = { viewModel.testShizukuCommand() }
+    )
+
+    // 3. STORAGE ACCESS
+    PrivilegeBlock(
+        title = "STORAGE ACCESS (All Files)",
+        status = if (uiState.isStorageGranted) "[GRANTED]" else "[NOT GRANTED]",
+        statusColor = if (uiState.isStorageGranted) AgTerminalGreen else AgError,
+        description = "Required to read and modify audio, scripts, and downloads on /storage/emulated/0.",
+        actionButtonText = "[REQUEST STORAGE ACCESS]",
+        onAction = { viewModel.requestStoragePermission() }
+    )
+
+    // Command result banner if tested
+    uiState.systemCommandResult?.let { result ->
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .border(1.dp, AgTerminalPrompt)
+                .padding(8.dp)
+        ) {
+            Text(
+                text = "OUTPUT:",
+                color = AgTerminalPrompt,
+                fontFamily = FontFamily.Monospace,
+                fontSize = 11.sp,
+                fontWeight = FontWeight.Bold
+            )
+            Text(
+                text = result,
+                color = AgTextPrimary,
+                fontFamily = FontFamily.Monospace,
+                fontSize = 11.sp
+            )
+        }
+    }
+
+    HorizontalDivider(color = AgSeparator, thickness = 1.dp)
+
+    // 4. AUTO-APPROVE COMMANDS
+    SectionHeader("EXECUTION PERMISSION MODE")
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .border(1.dp, AgBorder)
+            .padding(10.dp),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = "Auto-approve agent tool commands",
+                color = AgTextPrimary,
+                fontFamily = FontFamily.Monospace,
+                fontSize = 12.sp,
+                fontWeight = FontWeight.Bold
+            )
+            Text(
+                text = "--dangerously-skip-permissions: ${if (uiState.autoApprove) "ON" else "OFF"}",
+                color = if (uiState.autoApprove) AgTerminalGreen else AgTerminalAmber,
+                fontFamily = FontFamily.Monospace,
+                fontSize = 10.sp
+            )
+        }
+
+        OutlinedButton(
+            onClick = { viewModel.toggleAutoApprove() },
+            border = BorderStroke(1.dp, if (uiState.autoApprove) AgTerminalGreen else AgTerminalAmber),
+            shape = RoundedCornerShape(2.dp),
+            colors = ButtonDefaults.outlinedButtonColors(
+                contentColor = if (uiState.autoApprove) AgTerminalGreen else AgTerminalAmber
+            )
+        ) {
+            Text(
+                text = if (uiState.autoApprove) "[ON]" else "[OFF]",
+                fontFamily = FontFamily.Monospace,
+                fontSize = 11.sp,
+                fontWeight = FontWeight.Bold
+            )
+        }
+    }
+
+    HorizontalDivider(color = AgSeparator, thickness = 1.dp)
+
+    // 5. WORKSPACE DIRECTORY
+    SectionHeader("PROJECT WORKSPACE")
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .border(1.dp, AgBorder)
+            .padding(10.dp),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = uiState.workspacePath,
+                color = AgTextPrimary,
+                fontFamily = FontFamily.Monospace,
+                fontSize = 11.sp
+            )
+        }
+
+        OutlinedButton(
+            onClick = onOpenWorkspaceDialog,
+            border = BorderStroke(1.dp, AgTerminalPrompt),
+            shape = RoundedCornerShape(2.dp),
+            colors = ButtonDefaults.outlinedButtonColors(contentColor = AgTerminalPrompt)
+        ) {
+            Text("[CHANGE DIR]", fontFamily = FontFamily.Monospace, fontSize = 11.sp)
+        }
+    }
+
+    HorizontalDivider(color = AgSeparator, thickness = 1.dp)
+
+    // 6. SYSTEM & ENGINE LOGGING
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        SectionHeader("SYSTEM & ENGINE LOGS")
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text(
+                text = "[COPY]",
+                color = AgTerminalPrompt,
+                fontFamily = FontFamily.Monospace,
+                fontSize = 11.sp,
+                modifier = Modifier.clickable {
+                    val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager
+                    val clip = ClipData.newPlainText("Antigravity Logs", uiState.liveLogs.joinToString("\n"))
+                    clipboard?.setPrimaryClip(clip)
+                    Toast.makeText(context, "Logs copied to clipboard", Toast.LENGTH_SHORT).show()
+                }
+            )
+            Text(
+                text = "[EXPORT]",
+                color = AgTerminalGreen,
+                fontFamily = FontFamily.Monospace,
+                fontSize = 11.sp,
+                modifier = Modifier.clickable {
+                    val path = viewModel.exportLogsToDownloads(context)
+                    Toast.makeText(context, "Saved to $path", Toast.LENGTH_LONG).show()
+                }
+            )
+        }
+    }
+
+    // Monospace terminal log box
+    val logBoxState = rememberLazyListState()
+    LaunchedEffect(uiState.liveLogs.size) {
+        if (uiState.liveLogs.isNotEmpty()) {
+            logBoxState.scrollToItem(uiState.liveLogs.size - 1)
+        }
+    }
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(240.dp)
+            .background(Color(0xFF0A0A0A))
+            .border(1.dp, AgBorder)
+            .padding(8.dp)
+    ) {
+        if (uiState.liveLogs.isEmpty()) {
+            Text(
+                text = "> Logs will appear here as engine and commands execute...",
+                color = AgTerminalDim,
+                fontFamily = FontFamily.Monospace,
+                fontSize = 10.sp
+            )
+        } else {
+            LazyColumn(
+                state = logBoxState,
+                modifier = Modifier.fillMaxSize()
+            ) {
+                items(uiState.liveLogs) { line ->
+                    val textColor = when {
+                        line.contains("ERR", ignoreCase = true) || line.contains("failed", ignoreCase = true) -> AgError
+                        line.contains("SUCCESS", ignoreCase = true) || line.contains("OK", ignoreCase = true) -> AgTerminalGreen
+                        line.contains("STDERR", ignoreCase = true) -> AgTerminalAmber
+                        else -> AgTextSecondary
+                    }
+                    Text(
+                        text = line,
+                        color = textColor,
+                        fontFamily = FontFamily.Monospace,
+                        fontSize = 10.sp,
+                        lineHeight = 14.sp
+                    )
+                }
+            }
+        }
     }
 }
 

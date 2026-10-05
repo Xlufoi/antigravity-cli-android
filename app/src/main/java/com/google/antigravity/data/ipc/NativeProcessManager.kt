@@ -109,16 +109,14 @@ class NativeProcessManager(
 
             // 4. Create resolv.conf, hosts, and nsswitch.conf for glibc networking & localhost resolution
             val resolvFile = File(context.filesDir, "resolv.conf")
-            resolvFile.writeText(
-                """
-                nameserver 8.8.8.8
-                nameserver 8.8.4.4
-                nameserver 1.1.1.1
-                options timeout:2 attempts:3
-                """.trimIndent()
-            )
+            val dnsList = getActiveDnsServers()
+            val resolvText = dnsList.joinToString("\n") { "nameserver $it" } + "\noptions timeout:1 attempts:2 rotate single-request-reopen\n"
+            resolvFile.writeText(resolvText)
             resolvFile.setReadable(true, false)
-            AppLogger.log(TAG, "Created resolv.conf (${resolvFile.length()} bytes)")
+            AppLogger.log(TAG, "Created resolv.conf with DNS: ${dnsList.joinToString(", ")} (${resolvFile.length()} bytes)")
+
+            // Setup Antigravity Mobile Rules for ffmpeg, storage, tools
+            setupMobileModelRules(File(workspacePath), geminiDir)
 
             val hostsFile = File(context.filesDir, "hosts")
             hostsFile.writeText(
@@ -174,6 +172,51 @@ class NativeProcessManager(
         }
 
         ready
+    }
+
+    private fun getActiveDnsServers(): List<String> {
+        val servers = mutableListOf<String>()
+        try {
+            val cm = context.getSystemService(Context.CONNECTIVITY_SERVICE) as? android.net.ConnectivityManager
+            val activeNet = cm?.activeNetwork
+            val linkProps = cm?.getLinkProperties(activeNet)
+            linkProps?.dnsServers?.forEach { inetAddr ->
+                val host = inetAddr.hostAddress
+                if (!host.isNullOrBlank() && !servers.contains(host)) {
+                    servers.add(host)
+                }
+            }
+        } catch (_: Exception) {}
+        listOf("1.1.1.1", "8.8.8.8", "8.8.4.4", "1.0.0.1").forEach { fb ->
+            if (!servers.contains(fb)) {
+                servers.add(fb)
+            }
+        }
+        return servers
+    }
+
+    private fun setupMobileModelRules(workspaceDir: File, geminiDir: File) {
+        try {
+            val rulesContent = """
+                # Antigravity Mobile CLI Rules
+                
+                ## Audio Processing (ffmpeg):
+                - When converting or editing audio files (.m4a, .mp3, .flac, .ogg, .wav), ALWAYS add `-vn` to strip video/artwork streams. Never allow ffmpeg to convert attached picture streams into audio containers without `-vn`.
+                - Always limit threads using `-threads 4` with ffmpeg to prevent mobile CPU overload and network socket aborts.
+                - Example: `ffmpeg -y -i "input.m4a" -vn -af "equalizer=f=50:width_type=h:width=40:g=16,bass=g=12:f=60,volume=1.5" -c:a aac -b:a 256k -threads 4 "output.m4a"`
+                
+                ## File System & Storage:
+                - Device user storage is located at `/storage/emulated/0` (including `/storage/emulated/0/Download`).
+                - Always verify file names with `ls` before executing processing commands.
+                - Built-in CLI tools available: `bash`, `python3`, `ffmpeg`, `curl`, `git`, `busybox`.
+            """.trimIndent()
+            
+            File(workspaceDir, "GEMINI.md").writeText(rulesContent)
+            File(geminiDir, "GEMINI.md").writeText(rulesContent)
+            AppLogger.log(TAG, "Configured mobile model rules in GEMINI.md")
+        } catch (e: Exception) {
+            AppLogger.log(TAG, "Failed to write GEMINI.md rules: ${e.message}")
+        }
     }
 
     fun saveToken(rawToken: String): Boolean {
@@ -305,10 +348,17 @@ class NativeProcessManager(
         env["LANG"] = "en_US.UTF-8"
         // Force Go to use CGO resolver which calls getaddrinfo in patched libc.so.6
         env["GODEBUG"] = "netdns=cgo"
-        env["RES_OPTIONS"] = "timeout:2 attempts:3"
+        env["RES_OPTIONS"] = "timeout:1 attempts:2 rotate single-request-reopen"
         env["PWD"] = workspaceDir.absolutePath
         val tmpDir = File(context.cacheDir, "tmp").apply { mkdirs() }
         env["TMPDIR"] = tmpDir.absolutePath
+
+        // Refresh resolv.conf before each prompt in case network / VPN changed
+        try {
+            val resolvFile = File(context.filesDir, "resolv.conf")
+            val dnsList = getActiveDnsServers()
+            resolvFile.writeText(dnsList.joinToString("\n") { "nameserver $it" } + "\noptions timeout:1 attempts:2 rotate single-request-reopen\n")
+        } catch (_: Exception) {}
 
         // Set up embedded isolated Termux sandbox paths
         val usrDir = File(context.filesDir, "usr")
@@ -415,15 +465,48 @@ class NativeProcessManager(
                                 send(AgpStreamMessage(type = "thought_done", thought_duration = formatted))
                             } else if (stepType == "tool") {
                                 val toolName = stepUpdate?.get("tool_name")?.jsonPrimitive?.content ?: "tool"
+                                val toolInfo = stepUpdate?.get("tool_info")?.jsonObject
+                                val params = toolInfo?.get("parameters")?.jsonObject
+                                val cmd = params?.get("CommandLine")?.jsonPrimitive?.content
+                                val targetFile = params?.get("TargetFile")?.jsonPrimitive?.content
+                                    ?: params?.get("AbsolutePath")?.jsonPrimitive?.content
+                                val output = toolInfo?.get("output")?.jsonPrimitive?.content
+
                                 if (state == "ACTIVE") {
                                     chunkEmitted = true
-                                    send(AgpStreamMessage(type = "tool_start", text = "▸ [tool: $toolName] running..."))
+                                    val desc = when {
+                                        !cmd.isNullOrBlank() -> "$ $cmd"
+                                        !targetFile.isNullOrBlank() -> "[$toolName $targetFile]"
+                                        else -> "[$toolName]"
+                                    }
+                                    send(AgpStreamMessage(type = "tool_start", text = "\n▸ $desc\n"))
+                                } else if (state == "DONE") {
+                                    chunkEmitted = true
+                                    if (!output.isNullOrBlank()) {
+                                        val cleanOutput = output.trim()
+                                        val lines = cleanOutput.lines()
+                                        val formatted = if (lines.size > 30) {
+                                            lines.take(10).joinToString("\n") + "\n... [truncated ${lines.size - 20} lines] ...\n" + lines.takeLast(10).joinToString("\n")
+                                        } else {
+                                            cleanOutput
+                                        }
+                                        send(AgpStreamMessage(type = "chunk", text = "$formatted\n"))
+                                    }
+                                }
+                            } else if (stepType == "error_message") {
+                                val errorMsg = stepUpdate?.get("error")?.jsonPrimitive?.content
+                                    ?: stepUpdate?.get("text")?.jsonPrimitive?.content
+                                    ?: stepUpdate?.get("content")?.jsonPrimitive?.content
+                                if (!errorMsg.isNullOrBlank()) {
+                                    chunkEmitted = true
+                                    send(AgpStreamMessage(type = "chunk", text = "\n[Error]: $errorMsg\n"))
                                 }
                             }
                         }
                         "result" -> {
                             val resultObj = rootObj["result"]?.jsonObject
                             val resText = resultObj?.get("response")?.jsonPrimitive?.content
+                            val errorText = resultObj?.get("error")?.jsonPrimitive?.content
 
                             val usageObj = resultObj?.get("usage")?.jsonObject
                             if (usageObj != null) {
@@ -446,6 +529,9 @@ class NativeProcessManager(
                             if (!resText.isNullOrBlank()) {
                                 chunkEmitted = true
                                 send(AgpStreamMessage(type = "final", text = resText))
+                            } else if (!errorText.isNullOrBlank()) {
+                                chunkEmitted = true
+                                send(AgpStreamMessage(type = "chunk", text = "\n[Session Error]: $errorText\n"))
                             }
                             emitDone()
                         }
@@ -471,18 +557,21 @@ class NativeProcessManager(
             try { errThread.join(500) } catch (_: Exception) {}
 
             val exitCode = proc.exitValue()
-            if (exitCode != 0 && !chunkEmitted) {
+            if (exitCode != 0) {
                 val errorSummary = synchronized(errLines) {
                     val meaningful = errLines.filter {
                         it.contains("error", ignoreCase = true) ||
                         it.contains("invalid", ignoreCase = true) ||
                         it.contains("failed", ignoreCase = true) ||
-                        it.contains("fatal", ignoreCase = true)
+                        it.contains("fatal", ignoreCase = true) ||
+                        it.contains("abort", ignoreCase = true)
                     }
                     if (meaningful.isNotEmpty()) meaningful.joinToString("\n")
                     else errLines.takeLast(6).joinToString("\n")
                 }
-                send(AgpStreamMessage(type = "chunk", text = "[CLI ERROR - exit code $exitCode]:\n$errorSummary\n"))
+                if (errorSummary.isNotBlank()) {
+                    send(AgpStreamMessage(type = "chunk", text = "\n[CLI Exit $exitCode]: $errorSummary\n"))
+                }
             }
 
             emitDone()

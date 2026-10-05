@@ -153,8 +153,8 @@ class AgentRepositoryImpl(private val context: Context) : AgentRepository {
                     }
                     "tool_start" -> {
                         event.text?.let { toolStatus ->
-                            val displayText = if (currentAgentMessage.isNotBlank()) {
-                                "$currentAgentMessage\n\n$toolStatus"
+                            currentAgentMessage = if (currentAgentMessage.isNotBlank()) {
+                                "$currentAgentMessage\n$toolStatus"
                             } else {
                                 toolStatus
                             }
@@ -162,7 +162,7 @@ class AgentRepositoryImpl(private val context: Context) : AgentRepository {
                                 ChatMessage(
                                     id = messageId,
                                     sender = MessageSender.AGENT,
-                                    text = displayText,
+                                    text = currentAgentMessage,
                                     thinkingText = currentThoughtMessage,
                                     thoughtDuration = currentThoughtDuration,
                                     isStreaming = true
@@ -172,7 +172,11 @@ class AgentRepositoryImpl(private val context: Context) : AgentRepository {
                     }
                     "final" -> {
                         event.text?.let { fullText ->
-                            currentAgentMessage = fullText
+                            currentAgentMessage = if (currentAgentMessage.isNotBlank()) {
+                                if (currentAgentMessage.contains(fullText)) currentAgentMessage else "$currentAgentMessage\n\n$fullText"
+                            } else {
+                                fullText
+                            }
                             _messagesFlow.emit(
                                 ChatMessage(
                                     id = messageId,
@@ -186,11 +190,18 @@ class AgentRepositoryImpl(private val context: Context) : AgentRepository {
                         }
                     }
                     "done" -> {
+                        val finalText = if (currentAgentMessage.isNotBlank()) {
+                            currentAgentMessage
+                        } else if (currentThoughtMessage.isNotBlank()) {
+                            ""
+                        } else {
+                            "[Notice]: Turn completed."
+                        }
                         _messagesFlow.emit(
                             ChatMessage(
                                 id = messageId,
                                 sender = MessageSender.AGENT,
-                                text = currentAgentMessage,
+                                text = finalText,
                                 thinkingText = currentThoughtMessage,
                                 thoughtDuration = currentThoughtDuration,
                                 isStreaming = false
