@@ -9,7 +9,7 @@ import java.io.FileOutputStream
 
 object EngineInstaller {
     private const val TAG = "EngineInstaller"
-    private const val ENGINE_VERSION = "2.3"
+    private const val ENGINE_VERSION = "2.4"
 
     private val BUSYBOX_APPLETS = listOf(
         "[", "[[", "ar", "arch", "arp", "arping", "ascii", "ash", "awk", "base32", "base64",
@@ -44,8 +44,13 @@ object EngineInstaller {
         val bashFile = File(context.filesDir, "usr/bin/bash")
         val busyboxFile = File(context.filesDir, "usr/bin/busybox")
 
-        return agyBinary.exists() && ldLoader.exists() && agyBinary.length() > 50_000_000 &&
+        val ready = agyBinary.exists() && ldLoader.exists() && agyBinary.length() > 50_000_000 &&
                 isVersionMatch && bashFile.exists() && busyboxFile.exists()
+
+        if (!ready) {
+            AppLogger.log(TAG, "isEngineReady: false (agy=${agyBinary.exists()}/${agyBinary.length()}, ld=${ldLoader.exists()}, ver=$isVersionMatch, bash=${bashFile.exists()}, busybox=${busyboxFile.exists()})")
+        }
+        return ready
     }
 
     suspend fun installEngine(
@@ -101,19 +106,15 @@ object EngineInstaller {
                 AppLogger.log(TAG, "Copied temp archive: ${tempTarFile.length()} bytes")
                 onProgress(0.55f, "Распаковка ядра в engine/ (200 МБ)...")
 
-                val isGzip = tarAssetName.endsWith(".gz")
-                val tarFlag = if (isGzip) "-xzf" else "-xf"
-
-                val pb = ProcessBuilder(
-                    "/system/bin/toybox", "tar", tarFlag, tempTarFile.absolutePath, "-C", engineDir.absolutePath
-                )
-                pb.redirectErrorStream(true)
-                val proc = pb.start()
-                val logOutput = proc.inputStream.bufferedReader().readText()
-                val exitCode = proc.waitFor()
-                AppLogger.log(TAG, "Toybox tar exitCode=$exitCode, output: $logOutput")
-
+                val extracted = extractTarArchive(tempTarFile, engineDir)
                 tempTarFile.delete()
+
+                if (!extracted) {
+                    val errorMsg = "Ошибка распаковки ядра engine-bundle!"
+                    AppLogger.log(TAG, errorMsg)
+                    onProgress(0f, errorMsg)
+                    return@withContext false
+                }
 
                 ldLoader.setExecutable(true, false)
                 agyBinary.setExecutable(true, false)
@@ -136,8 +137,9 @@ object EngineInstaller {
                 AppLogger.log(TAG, "INSTALLATION COMPLETED SUCCESSFULLY! Binary size=${agyBinary.length()}")
                 onProgress(1.0f, "Распаковка успешно завершена!")
             } else {
-                AppLogger.log(TAG, "INSTALLATION VERIFICATION FAILED! Missing binary or loader.")
-                onProgress(0f, "Ошибка проверки: файлы не найдены.")
+                val errorMsg = "Ошибка проверки: файлы не найдены (agy=${agyBinary.exists()}, bash=${File(context.filesDir, "usr/bin/bash").exists()})"
+                AppLogger.log(TAG, errorMsg)
+                onProgress(0f, errorMsg)
             }
             success
         } catch (e: Exception) {
@@ -153,7 +155,7 @@ object EngineInstaller {
             val termuxAsset = assetNames.firstOrNull { it.startsWith("termux-bundle") } ?: return false
 
             val usrDir = File(context.filesDir, "usr").apply { mkdirs() }
-            val tempFile = File(context.cacheDir, "termux-temp.tar.gz")
+            val tempFile = File(context.cacheDir, "termux-temp.tar")
 
             AppLogger.log(TAG, "Copying $termuxAsset...")
             context.assets.open(termuxAsset).use { input ->
@@ -162,17 +164,14 @@ object EngineInstaller {
                 }
             }
 
-            AppLogger.log(TAG, "Extracting Termux bundle to ${usrDir.absolutePath}...")
-            val pb = ProcessBuilder(
-                "/system/bin/toybox", "tar", "-xzf", tempFile.absolutePath, "-C", usrDir.absolutePath
-            )
-            pb.redirectErrorStream(true)
-            val proc = pb.start()
-            val output = proc.inputStream.bufferedReader().readText()
-            val exitCode = proc.waitFor()
-            AppLogger.log(TAG, "Termux tar exitCode=$exitCode, output: $output")
-
+            AppLogger.log(TAG, "Extracting Termux bundle to ${usrDir.absolutePath} (size: ${tempFile.length()} bytes)...")
+            val extracted = extractTarArchive(tempFile, usrDir)
             tempFile.delete()
+
+            if (!extracted) {
+                AppLogger.log(TAG, "Failed extracting Termux tar archive!")
+                return false
+            }
 
             // Set executable bits on binaries & libraries
             val usrBin = File(usrDir, "bin")
@@ -180,17 +179,19 @@ object EngineInstaller {
             usrBin.listFiles()?.forEach { it.setExecutable(true, false) }
             usrLib.listFiles()?.forEach { it.setExecutable(true, false) }
 
-            // Create symlinks for BusyBox applets
+            // Create symlinks for BusyBox applets (excluding real standalone binaries)
             val busyboxFile = File(usrBin, "busybox")
             if (busyboxFile.exists()) {
                 busyboxFile.setExecutable(true, false)
                 for (applet in BUSYBOX_APPLETS) {
+                    if (applet == "busybox" || applet == "bash" || applet == "curl" || applet == "git") continue
                     val appletFile = File(usrBin, applet)
-                    if (!appletFile.exists()) {
-                        try {
-                            Os.symlink("busybox", appletFile.absolutePath)
-                        } catch (_: Exception) {}
-                    }
+                    try {
+                        if (appletFile.exists() || !appletFile.canonicalPath.equals(appletFile.absolutePath)) {
+                            appletFile.delete()
+                        }
+                        Os.symlink("busybox", appletFile.absolutePath)
+                    } catch (_: Exception) {}
                 }
             }
 
@@ -205,12 +206,41 @@ object EngineInstaller {
                 } catch (_: Exception) {}
             }
 
-            AppLogger.log(TAG, "Termux sandbox successfully extracted to ${usrDir.absolutePath}")
+            AppLogger.log(TAG, "Termux sandbox successfully configured in ${usrDir.absolutePath}")
             true
         } catch (e: Exception) {
             AppLogger.log(TAG, "Failed extracting Termux bundle: ${e.message}")
             false
         }
+    }
+
+    private fun extractTarArchive(tarFile: File, targetDir: File): Boolean {
+        val isGzip = isGzipFile(tarFile)
+        val flagsToTry = if (isGzip) listOf("-xzf", "-xf") else listOf("-xf", "-xzf")
+        for (flag in flagsToTry) {
+            try {
+                val pb = ProcessBuilder("/system/bin/toybox", "tar", flag, tarFile.absolutePath, "-C", targetDir.absolutePath)
+                pb.redirectErrorStream(true)
+                val proc = pb.start()
+                val logOutput = proc.inputStream.bufferedReader().readText()
+                val exitCode = proc.waitFor()
+                AppLogger.log(TAG, "Toybox tar ($flag) to ${targetDir.name} exitCode=$exitCode, output: $logOutput")
+                if (exitCode == 0) return true
+            } catch (e: Exception) {
+                AppLogger.log(TAG, "Toybox tar error ($flag): ${e.message}")
+            }
+        }
+        return false
+    }
+
+    private fun isGzipFile(file: File): Boolean {
+        return try {
+            file.inputStream().use { input ->
+                val b1 = input.read()
+                val b2 = input.read()
+                b1 == 0x1f && b2 == 0x8b
+            }
+        } catch (_: Exception) { false }
     }
 
     fun setupSandboxLinuxEnvironment(context: Context) {
