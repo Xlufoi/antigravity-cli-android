@@ -391,15 +391,15 @@ fun ControlCenterScreen(
                             Row(
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .border(1.dp, if (account.isActive) AgTerminalPrompt else AgBorder)
+                                    .border(1.dp, if (account.isCurrent) AgTerminalPrompt else AgBorder)
                                     .padding(8.dp),
                                 horizontalArrangement = Arrangement.SpaceBetween,
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 Column(modifier = Modifier.weight(1f)) {
                                     Text(
-                                        text = "> ${account.name} ${if (account.isActive) "[ACTIVE]" else ""}",
-                                        color = if (account.isActive) AgTerminalPrompt else AgTextPrimary,
+                                        text = "> ${account.name} ${if (account.isCurrent) "[ACTIVE]" else ""}",
+                                        color = if (account.isCurrent) AgTerminalPrompt else AgTextPrimary,
                                         fontFamily = FontFamily.Monospace,
                                         fontWeight = FontWeight.Bold,
                                         fontSize = 12.sp
@@ -413,7 +413,7 @@ fun ControlCenterScreen(
                                 }
 
                                 Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                                    if (!account.isActive) {
+                                    if (!account.isCurrent) {
                                         Text(
                                             text = "[SWITCH]",
                                             color = AgTerminalGreen,
@@ -670,7 +670,7 @@ fun ControlCenterScreen(
     if (showWorkspaceDialog) {
         WorkspacePickerDialog(
             currentPath = uiState.workspacePath,
-            onPathSelected = {
+            onSelectPath = {
                 viewModel.updateWorkspace(it)
                 showWorkspaceDialog = false
             },
