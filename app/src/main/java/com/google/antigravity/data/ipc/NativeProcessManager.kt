@@ -1,6 +1,11 @@
 package com.google.antigravity.data.ipc
 
 import android.content.Context
+import android.content.Intent
+import android.net.Uri
+import android.os.Build
+import android.os.Environment
+import android.provider.Settings
 import com.google.antigravity.data.model.AgpStreamMessage
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
@@ -94,7 +99,20 @@ class NativeProcessManager(
                 AppLogger.log(TAG, "Initialized default settings.json")
             }
 
-            // 4. Extract CA certificates for HTTPS/SSL
+            // 4. Create resolv.conf for glibc DNS resolution
+            val resolvFile = File(context.filesDir, "resolv.conf")
+            resolvFile.writeText(
+                """
+                nameserver 8.8.8.8
+                nameserver 8.8.4.4
+                nameserver 1.1.1.1
+                options timeout:2 attempts:3
+                """.trimIndent()
+            )
+            resolvFile.setReadable(true, false)
+            AppLogger.log(TAG, "Created resolv.conf (${resolvFile.length()} bytes)")
+
+            // 5. Extract CA certificates for HTTPS/SSL
             val caCertFile = File(context.filesDir, "cacert.pem")
             if (!caCertFile.exists() || caCertFile.length() == 0L) {
                 try {
@@ -107,7 +125,7 @@ class NativeProcessManager(
                 }
             }
 
-            // 5. Auto-import token from Downloads if token file is missing
+            // 6. Auto-import token from Downloads if token file is missing
             val tokenFile = File(geminiDir, "antigravity-oauth-token")
             val downloadToken = File("/storage/emulated/0/Download/antigravity-oauth-token")
             if ((!tokenFile.exists() || tokenFile.length() == 0L) && downloadToken.exists()) {
@@ -119,7 +137,7 @@ class NativeProcessManager(
                 }
             }
 
-            // 6. Save user OAuth token if passed directly
+            // 7. Save user OAuth token if passed directly
             if (!oauthToken.isNullOrBlank()) {
                 saveToken(oauthToken)
             }
@@ -158,6 +176,17 @@ class NativeProcessManager(
     }
 
     fun importTokenFromDownloads(): Boolean {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R && !Environment.isExternalStorageManager()) {
+            AppLogger.log(TAG, "Requesting MANAGE_EXTERNAL_STORAGE permission for Downloads access")
+            try {
+                val intent = Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION).apply {
+                    data = Uri.parse("package:${context.packageName}")
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                }
+                context.startActivity(intent)
+            } catch (_: Exception) {}
+            return false
+        }
         return try {
             val downloadToken = File("/storage/emulated/0/Download/antigravity-oauth-token")
             if (!downloadToken.exists() || downloadToken.length() == 0L) {
@@ -232,6 +261,9 @@ class NativeProcessManager(
         env["SSL_CERT_FILE"] = caCertFile.absolutePath
         env["TERM"] = "xterm-256color"
         env["LANG"] = "en_US.UTF-8"
+        // Force Go to use CGO resolver which calls getaddrinfo in patched libc.so.6
+        env["GODEBUG"] = "netdns=cgo"
+        env["RES_OPTIONS"] = "timeout:2 attempts:3"
 
         try {
             val proc = pb.start()

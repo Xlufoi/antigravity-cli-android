@@ -8,12 +8,15 @@ import java.io.FileOutputStream
 
 object EngineInstaller {
     private const val TAG = "EngineInstaller"
+    private const val ENGINE_VERSION = "2.1"
 
     fun isEngineReady(context: Context): Boolean {
         val engineDir = File(context.filesDir, "engine")
         val agyBinary = File(engineDir, "agy.va39")
         val ldLoader = File(engineDir, "ld-linux-aarch64.so.1")
-        return agyBinary.exists() && ldLoader.exists() && agyBinary.length() > 50_000_000
+        val versionFile = File(engineDir, ".version")
+        val isVersionMatch = versionFile.exists() && versionFile.readText().trim() == ENGINE_VERSION
+        return agyBinary.exists() && ldLoader.exists() && agyBinary.length() > 50_000_000 && isVersionMatch
     }
 
     suspend fun installEngine(
@@ -58,7 +61,6 @@ object EngineInstaller {
                     while (input.read(buffer).also { bytesRead = it } != -1) {
                         output.write(buffer, 0, bytesRead)
                         totalCopied += bytesRead
-                        // Progress up to 50%
                         val copyProgress = 0.15f + (totalCopied / 80_000_000f).coerceAtMost(0.35f)
                         onProgress(copyProgress, "Копирование: ${totalCopied / (1024 * 1024)} МБ...")
                     }
@@ -90,6 +92,8 @@ object EngineInstaller {
             ldLoader.setExecutable(true, false)
             agyBinary.setExecutable(true, false)
             File(engineDir, "lib").listFiles()?.forEach { it.setExecutable(true, false) }
+
+            File(engineDir, ".version").writeText(ENGINE_VERSION)
 
             val success = isEngineReady(context)
             if (success) {
