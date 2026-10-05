@@ -52,12 +52,19 @@ class ChatHistoryManager(private val context: Context) {
         }
     }
 
+    private val writeLock = Any()
+
     suspend fun saveSession(session: ChatSession) = withContext(Dispatchers.IO) {
-        try {
-            val file = File(sessionsDir, "${session.id}.json")
-            file.writeText(json.encodeToString(session))
-        } catch (e: Exception) {
-            AppLogger.log(TAG, "Error saving session ${session.id}: ${e.message}")
+        synchronized(writeLock) {
+            try {
+                val file = File(sessionsDir, "${session.id}.json")
+                val tempFile = File(sessionsDir, "${session.id}.tmp")
+                tempFile.writeText(json.encodeToString(session))
+                if (file.exists()) file.delete()
+                tempFile.renameTo(file)
+            } catch (e: Exception) {
+                AppLogger.log(TAG, "Error saving session ${session.id}: ${e.message}")
+            }
         }
     }
 

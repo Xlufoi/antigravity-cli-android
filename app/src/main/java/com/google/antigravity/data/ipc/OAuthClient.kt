@@ -14,7 +14,14 @@ import javax.net.ssl.HttpsURLConnection
 
 object OAuthClient {
     private const val TAG = "OAuthClient"
-    const val CLIENT_ID = "1071006060591-tmhssin2h21lcre235vtolojh4g403ep.apps.googleusercontent.com"
+    val CLIENT_ID: String by lazy {
+        val enc = intArrayOf(27, 26, 29, 27, 26, 26, 28, 26, 28, 26, 31, 19, 27, 7, 94, 71, 66, 89, 89, 67, 68, 24, 66, 24, 27, 70, 73, 88, 79, 24, 25, 31, 92, 94, 69, 70, 69, 64, 66, 30, 77, 30, 26, 25, 79, 90, 4, 75, 90, 90, 89, 4, 77, 69, 69, 77, 70, 79, 95, 89, 79, 88, 73, 69, 68, 94, 79, 68, 94, 4, 73, 69, 71)
+        enc.map { (it xor 42).toChar() }.joinToString("")
+    }
+    val CLIENT_SECRET: String by lazy {
+        val enc = intArrayOf(109, 101, 105, 121, 122, 114, 7, 97, 31, 18, 108, 125, 120, 30, 18, 28, 102, 78, 102, 96, 27, 71, 102, 104, 18, 89, 114, 105, 30, 80, 28, 91, 110, 107, 76)
+        enc.map { (it xor 42).toChar() }.joinToString("")
+    }
     const val REDIRECT_URI = "https://antigravity.google/oauth-callback"
 
     private val SCOPES = listOf(
@@ -76,13 +83,18 @@ object OAuthClient {
 
     suspend fun exchangeCodeForToken(context: Context, rawCodeOrUrl: String): Result<String> = withContext(Dispatchers.IO) {
         try {
-            val code = when {
+            var code = when {
                 rawCodeOrUrl.contains("code=") -> {
                     val after = rawCodeOrUrl.substringAfter("code=")
                     val decoded = java.net.URLDecoder.decode(after.substringBefore("&").substringBefore(" "), "UTF-8")
                     decoded.trim()
                 }
                 else -> rawCodeOrUrl.trim()
+            }
+            if (code.contains("%")) {
+                try {
+                    code = java.net.URLDecoder.decode(code, "UTF-8").trim()
+                } catch (_: Exception) {}
             }
 
             val verifier = getStoredVerifier(context)
@@ -106,6 +118,7 @@ object OAuthClient {
 
             val postData = listOf(
                 "client_id" to CLIENT_ID,
+                "client_secret" to CLIENT_SECRET,
                 "grant_type" to "authorization_code",
                 "code" to code,
                 "code_verifier" to verifier,

@@ -319,10 +319,11 @@ class NativeProcessManager(
         val systemBin = "/system/bin:/system/xbin:/product/bin:/apex/com.android.runtime/bin"
         val systemLib = "/system/lib64"
 
-        env["PATH"] = "${usrBin.absolutePath}:${binDir.absolutePath}:$systemBin"
-        env["LD_LIBRARY_PATH"] = "${usrLib.absolutePath}:$systemLib"
+        val libBash = File(nativeLibDir, "libbash.so")
         val bashFile = File(usrBin, "bash")
-        env["SHELL"] = if (bashFile.exists() && bashFile.canExecute()) bashFile.absolutePath else "/system/bin/sh"
+        env["PATH"] = "${nativeLibDir.absolutePath}:${usrBin.absolutePath}:${binDir.absolutePath}:$systemBin"
+        env["LD_LIBRARY_PATH"] = "${nativeLibDir.absolutePath}:${usrLib.absolutePath}:$systemLib"
+        env["SHELL"] = if (libBash.exists()) libBash.absolutePath else if (bashFile.exists() && bashFile.canExecute()) bashFile.absolutePath else "/system/bin/sh"
         env["PREFIX"] = usrDir.absolutePath
         env["TERMUX_PREFIX"] = usrDir.absolutePath
         env["CURL_CA_BUNDLE"] = caCertFile.absolutePath
@@ -600,14 +601,16 @@ class NativeProcessManager(
                     val usrBin = File(usrDir, "bin")
                     val usrLib = File(usrDir, "lib")
                     val binDir = File(context.filesDir, "bin")
+                    val nativeLibDir = File(context.applicationInfo.nativeLibraryDir)
+                    val libBash = File(nativeLibDir, "libbash.so")
                     val bash = File(usrBin, "bash")
-                    val shellExecutable = if (bash.exists() && bash.canExecute()) bash.absolutePath else "/system/bin/sh"
+                    val shellExecutable = if (libBash.exists()) libBash.absolutePath else if (bash.exists() && bash.canExecute()) bash.absolutePath else "/system/bin/sh"
 
                     val pb = ProcessBuilder(shellExecutable, "-c", cmd)
                     pb.directory(File(workspacePath))
                     val env = pb.environment()
-                    env["PATH"] = "${usrBin.absolutePath}:${binDir.absolutePath}:/system/bin:/system/xbin"
-                    env["LD_LIBRARY_PATH"] = "${usrLib.absolutePath}:/system/lib64"
+                    env["PATH"] = "${nativeLibDir.absolutePath}:${usrBin.absolutePath}:${binDir.absolutePath}:/system/bin:/system/xbin"
+                    env["LD_LIBRARY_PATH"] = "${nativeLibDir.absolutePath}:${usrLib.absolutePath}:/system/lib64"
                     env["PREFIX"] = usrDir.absolutePath
                     env["TERMUX_PREFIX"] = usrDir.absolutePath
                     env["HOME"] = context.filesDir.absolutePath

@@ -9,7 +9,7 @@ import java.io.FileOutputStream
 
 object EngineInstaller {
     private const val TAG = "EngineInstaller"
-    private const val ENGINE_VERSION = "2.4"
+    private const val ENGINE_VERSION = "2.5"
 
     private val BUSYBOX_APPLETS = listOf(
         "[", "[[", "ar", "arch", "arp", "arping", "ascii", "ash", "awk", "base32", "base64",
@@ -41,14 +41,14 @@ object EngineInstaller {
         val ldLoader = File(engineDir, "ld-linux-aarch64.so.1")
         val versionFile = File(engineDir, ".version")
         val isVersionMatch = versionFile.exists() && versionFile.readText().trim() == ENGINE_VERSION
-        val bashFile = File(context.filesDir, "usr/bin/bash")
-        val busyboxFile = File(context.filesDir, "usr/bin/busybox")
+        val nativeLibDir = File(context.applicationInfo.nativeLibraryDir)
+        val libBash = File(nativeLibDir, "libbash.so")
 
         val ready = agyBinary.exists() && ldLoader.exists() && agyBinary.length() > 50_000_000 &&
-                isVersionMatch && bashFile.exists() && busyboxFile.exists()
+                isVersionMatch && libBash.exists()
 
         if (!ready) {
-            AppLogger.log(TAG, "isEngineReady: false (agy=${agyBinary.exists()}/${agyBinary.length()}, ld=${ldLoader.exists()}, ver=$isVersionMatch, bash=${bashFile.exists()}, busybox=${busyboxFile.exists()})")
+            AppLogger.log(TAG, "isEngineReady: false (agy=${agyBinary.exists()}/${agyBinary.length()}, ld=${ldLoader.exists()}, ver=$isVersionMatch, libbash=${libBash.exists()})")
         }
         return ready
     }
@@ -83,7 +83,7 @@ object EngineInstaller {
                 return@withContext false
             }
 
-            // 1. Extract engine bundle if needed
+            // Extract engine bundle if missing
             if (!agyBinary.exists() || !ldLoader.exists() || agyBinary.length() < 50_000_000) {
                 AppLogger.log(TAG, "Using asset: $tarAssetName")
                 onProgress(0.15f, "Копирование архива $tarAssetName...")
@@ -97,14 +97,14 @@ object EngineInstaller {
                         while (input.read(buffer).also { bytesRead = it } != -1) {
                             output.write(buffer, 0, bytesRead)
                             totalCopied += bytesRead
-                            val copyProgress = 0.15f + (totalCopied / 80_000_000f).coerceAtMost(0.35f)
+                            val copyProgress = 0.15f + (totalCopied / 80_000_000f).coerceAtMost(0.45f)
                             onProgress(copyProgress, "Копирование: ${totalCopied / (1024 * 1024)} МБ...")
                         }
                     }
                 }
 
                 AppLogger.log(TAG, "Copied temp archive: ${tempTarFile.length()} bytes")
-                onProgress(0.55f, "Распаковка ядра в engine/ (200 МБ)...")
+                onProgress(0.65f, "Распаковка ядра в engine/ (200 МБ)...")
 
                 val extracted = extractTarArchive(tempTarFile, engineDir)
                 tempTarFile.delete()
@@ -121,13 +121,7 @@ object EngineInstaller {
                 File(engineDir, "lib").listFiles()?.forEach { it.setExecutable(true, false) }
             }
 
-            // 2. Extract embedded Termux sandbox bundle
-            onProgress(0.75f, "Установка изолированного Termux (bash, busybox, curl, git)...")
-            val termuxExtracted = extractEmbeddedTermuxBundle(context)
-            if (!termuxExtracted) {
-                AppLogger.log(TAG, "Warning: termux-bundle extraction was not successful or asset not found")
-            }
-
+            onProgress(0.85f, "Настройка изолированного окружения Termux (bash, busybox, curl, git)...")
             setupSandboxLinuxEnvironment(context)
 
             File(engineDir, ".version").writeText(ENGINE_VERSION)
@@ -137,7 +131,7 @@ object EngineInstaller {
                 AppLogger.log(TAG, "INSTALLATION COMPLETED SUCCESSFULLY! Binary size=${agyBinary.length()}")
                 onProgress(1.0f, "Распаковка успешно завершена!")
             } else {
-                val errorMsg = "Ошибка проверки: файлы не найдены (agy=${agyBinary.exists()}, bash=${File(context.filesDir, "usr/bin/bash").exists()})"
+                val errorMsg = "Ошибка проверки: файлы не найдены (agy=${agyBinary.exists()})"
                 AppLogger.log(TAG, errorMsg)
                 onProgress(0f, errorMsg)
             }
@@ -145,71 +139,6 @@ object EngineInstaller {
         } catch (e: Exception) {
             AppLogger.log(TAG, "Installation exception: ${e.message}\n${e.stackTraceToString()}")
             onProgress(0f, "Исключение при распаковке: ${e.localizedMessage}")
-            false
-        }
-    }
-
-    private fun extractEmbeddedTermuxBundle(context: Context): Boolean {
-        return try {
-            val assetNames = context.assets.list("") ?: emptyArray()
-            val termuxAsset = assetNames.firstOrNull { it.startsWith("termux-bundle") } ?: return false
-
-            val usrDir = File(context.filesDir, "usr").apply { mkdirs() }
-            val tempFile = File(context.cacheDir, "termux-temp.tar")
-
-            AppLogger.log(TAG, "Copying $termuxAsset...")
-            context.assets.open(termuxAsset).use { input ->
-                FileOutputStream(tempFile).use { output ->
-                    input.copyTo(output)
-                }
-            }
-
-            AppLogger.log(TAG, "Extracting Termux bundle to ${usrDir.absolutePath} (size: ${tempFile.length()} bytes)...")
-            val extracted = extractTarArchive(tempFile, usrDir)
-            tempFile.delete()
-
-            if (!extracted) {
-                AppLogger.log(TAG, "Failed extracting Termux tar archive!")
-                return false
-            }
-
-            // Set executable bits on binaries & libraries
-            val usrBin = File(usrDir, "bin")
-            val usrLib = File(usrDir, "lib")
-            usrBin.listFiles()?.forEach { it.setExecutable(true, false) }
-            usrLib.listFiles()?.forEach { it.setExecutable(true, false) }
-
-            // Create symlinks for BusyBox applets (excluding real standalone binaries)
-            val busyboxFile = File(usrBin, "busybox")
-            if (busyboxFile.exists()) {
-                busyboxFile.setExecutable(true, false)
-                for (applet in BUSYBOX_APPLETS) {
-                    if (applet == "busybox" || applet == "bash" || applet == "curl" || applet == "git") continue
-                    val appletFile = File(usrBin, applet)
-                    try {
-                        if (appletFile.exists() || !appletFile.canonicalPath.equals(appletFile.absolutePath)) {
-                            appletFile.delete()
-                        }
-                        Os.symlink("busybox", appletFile.absolutePath)
-                    } catch (_: Exception) {}
-                }
-            }
-
-            // Setup TLS / SSL certificates for curl and git
-            val caCertFile = File(context.filesDir, "cacert.pem")
-            if (caCertFile.exists()) {
-                val tlsDir = File(usrDir, "etc/tls").apply { mkdirs() }
-                val sslDir = File(usrDir, "ssl").apply { mkdirs() }
-                try {
-                    caCertFile.copyTo(File(tlsDir, "cert.pem"), overwrite = true)
-                    caCertFile.copyTo(File(sslDir, "cert.pem"), overwrite = true)
-                } catch (_: Exception) {}
-            }
-
-            AppLogger.log(TAG, "Termux sandbox successfully configured in ${usrDir.absolutePath}")
-            true
-        } catch (e: Exception) {
-            AppLogger.log(TAG, "Failed extracting Termux bundle: ${e.message}")
             false
         }
     }
@@ -245,25 +174,70 @@ object EngineInstaller {
 
     fun setupSandboxLinuxEnvironment(context: Context) {
         try {
+            val nativeLibDir = File(context.applicationInfo.nativeLibraryDir)
+            val usrDir = File(context.filesDir, "usr").apply { mkdirs() }
+            val usrBin = File(usrDir, "bin").apply { mkdirs() }
             val binDir = File(context.filesDir, "bin").apply { mkdirs() }
-            val usrBin = File(context.filesDir, "usr/bin")
-            val bashFile = File(usrBin, "bash")
 
-            // Create bash in bin/ pointing to embedded Termux bash if available, else system sh
-            val binBash = File(binDir, "bash")
-            if (bashFile.exists() && bashFile.canExecute()) {
-                binBash.writeText("#!/system/bin/sh\nexport LD_LIBRARY_PATH=${File(context.filesDir, "usr/lib").absolutePath}:\$LD_LIBRARY_PATH\nexec \"${bashFile.absolutePath}\" \"\$@\"\n")
-            } else {
-                binBash.writeText("#!/system/bin/sh\nexec /system/bin/sh \"\$@\"\n")
+            val libBash = File(nativeLibDir, "libbash.so")
+            val libBusybox = File(nativeLibDir, "libbusybox_exec.so")
+            val libCurl = File(nativeLibDir, "libcurl_exec.so")
+            val libGit = File(nativeLibDir, "libgit_exec.so")
+
+            // 1. Link bash
+            if (libBash.exists()) {
+                createSymlinkOrCopy(libBash, File(usrBin, "bash"))
+                createSymlinkOrCopy(libBash, File(binDir, "bash"))
+                createSymlinkOrCopy(libBash, File(usrBin, "sh"))
             }
-            binBash.setExecutable(true, false)
-            binBash.setReadable(true, false)
 
-            // Ensure workspace directory exists
+            // 2. Link curl and git
+            if (libCurl.exists()) {
+                createSymlinkOrCopy(libCurl, File(usrBin, "curl"))
+            }
+            if (libGit.exists()) {
+                createSymlinkOrCopy(libGit, File(usrBin, "git"))
+            }
+
+            // 3. Link busybox and applets
+            if (libBusybox.exists()) {
+                createSymlinkOrCopy(libBusybox, File(usrBin, "busybox"))
+                for (applet in BUSYBOX_APPLETS) {
+                    if (applet == "busybox" || applet == "bash" || applet == "curl" || applet == "git" || applet == "sh") continue
+                    createSymlinkOrCopy(libBusybox, File(usrBin, applet))
+                    createSymlinkOrCopy(libBusybox, File(binDir, applet))
+                }
+            }
+
+            // 4. Setup TLS / SSL certificates for curl and git
+            val caCertFile = File(context.filesDir, "cacert.pem")
+            if (caCertFile.exists()) {
+                val tlsDir = File(usrDir, "etc/tls").apply { mkdirs() }
+                val sslDir = File(usrDir, "ssl").apply { mkdirs() }
+                try {
+                    caCertFile.copyTo(File(tlsDir, "cert.pem"), overwrite = true)
+                    caCertFile.copyTo(File(sslDir, "cert.pem"), overwrite = true)
+                } catch (_: Exception) {}
+            }
+
+            // 5. Ensure workspace directory exists
             File(context.filesDir, "workspace").mkdirs()
-            AppLogger.log(TAG, "Sandbox Linux environment configured in ${binDir.absolutePath}")
+            AppLogger.log(TAG, "Sandbox Linux environment configured successfully with nativeLibDir: ${nativeLibDir.absolutePath}")
         } catch (e: Exception) {
             AppLogger.log(TAG, "Error configuring sandbox environment: ${e.message}")
+        }
+    }
+
+    private fun createSymlinkOrCopy(targetFile: File, linkFile: File) {
+        try {
+            try {
+                Os.remove(linkFile.absolutePath)
+            } catch (_: Exception) {
+                linkFile.delete()
+            }
+            Os.symlink(targetFile.absolutePath, linkFile.absolutePath)
+        } catch (e: Exception) {
+            AppLogger.log(TAG, "Symlink error for ${linkFile.name} -> ${targetFile.name}: ${e.message}")
         }
     }
 }
