@@ -52,16 +52,31 @@ class NativeProcessManager(
             val geminiDir = File(context.filesDir, ".gemini/antigravity-cli")
             geminiDir.mkdirs()
 
-            // Provision initial OAuth token if available
-            val tokenFile = File(geminiDir, "antigravity-oauth-token")
-            if (!oauthToken.isNullOrBlank()) {
-                val tokenJson = if (oauthToken.trim().startsWith("{")) {
-                    oauthToken.trim()
-                } else {
-                    """{"token":{"access_token":"${oauthToken.trim()}"}}"""
+            // Extract CA certificates to enable HTTPS SSL handshake in glibc
+            val caCertFile = File(context.filesDir, "cacert.pem")
+            if (!caCertFile.exists() || caCertFile.length() == 0L) {
+                try {
+                    context.assets.open("cacert.pem").use { input ->
+                        caCertFile.outputStream().use { output -> input.copyTo(output) }
+                    }
+                    AppLogger.log(TAG, "Extracted cacert.pem (${caCertFile.length()} bytes)")
+                } catch (e: Exception) {
+                    AppLogger.log(TAG, "Failed extracting cacert.pem: ${e.message}")
                 }
-                tokenFile.writeText(tokenJson)
-                AppLogger.log(TAG, "Saved oauth token to ${tokenFile.absolutePath}")
+            }
+
+            // Provision initial OAuth token if provided by user
+            val tokenFile = File(geminiDir, "antigravity-oauth-token")
+            if (!tokenFile.exists() || tokenFile.length() == 0L) {
+                if (!oauthToken.isNullOrBlank()) {
+                    val tokenJson = if (oauthToken.trim().startsWith("{")) {
+                        oauthToken.trim()
+                    } else {
+                        """{"token":{"access_token":"${oauthToken.trim()}"}}"""
+                    }
+                    tokenFile.writeText(tokenJson)
+                    AppLogger.log(TAG, "Saved user oauth token to ${tokenFile.absolutePath}")
+                }
             }
 
             // Prefer ld loader extracted into nativeLibraryDir (allowed to execute by Android W^X policy)
@@ -93,6 +108,8 @@ class NativeProcessManager(
 
             val env = pb.environment()
             env["HOME"] = context.filesDir.absolutePath
+            env["ANTIGRAVITY_APP_DATA_DIR"] = geminiDir.absolutePath
+            env["SSL_CERT_FILE"] = caCertFile.absolutePath
             env["TERM"] = "xterm-256color"
             env["LANG"] = "en_US.UTF-8"
 
