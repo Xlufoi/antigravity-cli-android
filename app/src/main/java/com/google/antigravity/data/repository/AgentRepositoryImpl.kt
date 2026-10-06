@@ -4,6 +4,7 @@ import android.content.Context
 import com.google.antigravity.data.ipc.AccountManager
 import com.google.antigravity.data.ipc.ChatHistoryManager
 import com.google.antigravity.data.ipc.NativeProcessManager
+import com.google.antigravity.data.ipc.NetworkConfigManager
 import com.google.antigravity.domain.model.ChatMessage
 import com.google.antigravity.domain.model.MessageSender
 import com.google.antigravity.domain.model.ModelInfo
